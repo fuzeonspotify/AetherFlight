@@ -9,9 +9,9 @@ namespace AetherVapor
 {
     constexpr int32 SpanSegments = 15;
     constexpr int32 ChordSegments = 9;
-    constexpr int32 SheetLayers = 5;
-    constexpr int32 TrailPlanes = 5;
-    constexpr float TrailSampleInterval = 0.028f;
+    constexpr int32 SheetLayers = 3;
+    constexpr int32 TrailTubeSides = 8;
+    constexpr float TrailSampleInterval = 0.034f;
 }
 
 UAetherWingVaporComponent::UAetherWingVaporComponent()
@@ -69,7 +69,7 @@ void UAetherWingVaporComponent::TickComponent(
     }
 
     const float TargetIntensity = CalculateTargetIntensity();
-    const float ResponseSpeed = TargetIntensity > VaporIntensity ? 8.5f : 1.75f;
+    const float ResponseSpeed = TargetIntensity > VaporIntensity ? 7.0f : 2.8f;
     VaporIntensity = FMath::FInterpTo(VaporIntensity, TargetIntensity, DeltaTime, ResponseSpeed);
 
     const float TimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
@@ -178,7 +178,9 @@ void UAetherWingVaporComponent::BuildWingSheet(
             / static_cast<float>(AetherVapor::SheetLayers - 1);
         const float LayerDistance = FMath::Abs(LayerT * 2.0f - 1.0f);
         const float LayerEnvelope = FMath::Lerp(0.56f, 1.0f, 1.0f - LayerDistance);
-        const float LayerOffsetZ = (LayerT - 0.5f) * 118.0f;
+        // Keep the pressure cloud close to the lifting surface. The previous
+        // 118 cm stack separated into obvious white lines when viewed edge-on.
+        const float LayerOffsetZ = (LayerT - 0.5f) * 46.0f;
 
         for (int32 SpanIndex = 0; SpanIndex < AetherVapor::SpanSegments; ++SpanIndex)
         {
@@ -201,7 +203,7 @@ void UAetherWingVaporComponent::BuildWingSheet(
                     Chord * 6.7f - TimeSeconds * 0.43f + SideSign * 11.0f));
                 const float DensityNoise = FMath::Lerp(0.70f, 1.0f, Turbulence * 0.5f + 0.5f);
                 const float Alpha = Intensity * SpanFade * ChordEnvelope
-                    * LayerEnvelope * DensityNoise * 0.31f;
+                    * LayerEnvelope * DensityNoise * 0.135f;
                 const float Camber = FMath::Sin(Chord * PI)
                     * (24.0f + Intensity * 38.0f) + FMath::Sin(Span * PI) * 12.0f;
                 const float Z = 64.0f + LayerOffsetZ + Camber
@@ -274,9 +276,8 @@ void UAetherWingVaporComponent::UpdateTrailSamples(const float DeltaTime, const 
     TrailSamples.Add(NewSample);
 }
 
-void UAetherWingVaporComponent::AppendTrailRibbon(
+void UAetherWingVaporComponent::AppendTrailTube(
     const bool bLeft,
-    const float PlaneAngleRadians,
     TArray<FVector>& Vertices,
     TArray<int32>& Triangles,
     TArray<FVector>& Normals,
@@ -308,53 +309,79 @@ void UAetherWingVaporComponent::AppendTrailRibbon(
     for (int32 Index = 0; Index < TrailSamples.Num(); ++Index)
     {
         const FAetherVaporTrailSample& Sample = TrailSamples[Index];
-        const float AgeAlpha = 1.0f
-            - FMath::Clamp(Sample.Age / TrailLifetimeSeconds, 0.0f, 1.0f);
-        const float Expansion = 1.0f - AgeAlpha;
-        const float Width = FMath::Lerp(24.0f, 155.0f, Expansion);
-        const float DensityPulse = 0.84f
-            + 0.16f * FMath::Sin(Index * 1.83f + Sample.Age * 6.7f);
-        const float Alpha = Sample.Strength * FMath::Pow(AgeAlpha, 1.65f)
-            * 0.30f * DensityPulse;
+        const float NormalizedAge = FMath::Clamp(
+            Sample.Age / TrailLifetimeSeconds, 0.0f, 1.0f);
+        const float BirthFade = FMath::SmoothStep(0.0f, 0.075f, Sample.Age);
+        const float DeathFade = FMath::Pow(1.0f - NormalizedAge, 1.9f);
+        const float Expansion = FMath::SmoothStep(0.0f, 0.72f, NormalizedAge);
+        const float HorizontalRadius = FMath::Lerp(18.0f, 118.0f, Expansion);
+        const float VerticalRadius = FMath::Lerp(12.0f, 78.0f, Expansion);
+        const float DensityPulse = 0.72f
+            + 0.18f * FMath::Sin(Index * 1.71f + Sample.Age * 7.1f)
+            + 0.10f * FMath::Sin(Index * 0.43f - Sample.Age * 13.7f);
+        const float Alpha = Sample.Strength * BirthFade * DeathFade
+            * FMath::Clamp(DensityPulse, 0.42f, 1.0f) * 0.19f;
         const FVector Center = RolledUpCenter(Index);
-        const FVector Axis = (
-            Sample.UpWorld * FMath::Cos(PlaneAngleRadians)
-            + Sample.RightAxisWorld * FMath::Sin(PlaneAngleRadians)).GetSafeNormal();
 
         const FVector PreviousCenter = RolledUpCenter(FMath::Max(0, Index - 1));
         const FVector NextCenter = RolledUpCenter(FMath::Min(TrailSamples.Num() - 1, Index + 1));
-        const FVector TrailDirectionWorld = (NextCenter - PreviousCenter).GetSafeNormal();
-        FVector SurfaceNormalWorld = FVector::CrossProduct(TrailDirectionWorld, Axis).GetSafeNormal();
-        if (SurfaceNormalWorld.IsNearlyZero())
+        FVector TrailDirectionWorld = (NextCenter - PreviousCenter).GetSafeNormal();
+        if (TrailDirectionWorld.IsNearlyZero())
         {
-            SurfaceNormalWorld = Sample.UpWorld;
+            TrailDirectionWorld = -FlightPawn->GetActorForwardVector();
         }
 
-        Vertices.Add(OwnerTransform.InverseTransformPosition(Center - Axis * Width));
-        Vertices.Add(OwnerTransform.InverseTransformPosition(Center + Axis * Width));
-        const FVector LocalNormal = OwnerTransform.InverseTransformVectorNoScale(
-            SurfaceNormalWorld).GetSafeNormal();
-        Normals.Add(LocalNormal);
-        Normals.Add(LocalNormal);
+        // Construct a stable cross-section perpendicular to the trail, then
+        // rotate it as the vortex ages. A closed tube has real parallax and
+        // lighting from every view angle; crossed ribbons produced the bands
+        // visible in the user's screenshot.
+        FVector AxisUp = FVector::VectorPlaneProject(Sample.UpWorld, TrailDirectionWorld).GetSafeNormal();
+        if (AxisUp.IsNearlyZero())
+        {
+            AxisUp = FVector::UpVector;
+        }
+        FVector AxisSide = FVector::CrossProduct(TrailDirectionWorld, AxisUp).GetSafeNormal();
+        AxisUp = FVector::CrossProduct(AxisSide, TrailDirectionWorld).GetSafeNormal();
+        const float RollDirection = bLeft ? -1.0f : 1.0f;
+        const float CrossSectionRoll = RollDirection * Sample.Age * 4.6f;
+
         const float U = static_cast<float>(Index)
-            / static_cast<float>(FMath::Max(1, TrailSamples.Num() - 1)) * 4.5f;
-        UVs.Add(FVector2D(U, 0.0f));
-        UVs.Add(FVector2D(U, 1.0f));
-        Colors.Add(FLinearColor(0.94f, 0.975f, 1.0f, Alpha));
-        Colors.Add(FLinearColor(0.94f, 0.975f, 1.0f, Alpha));
+            / static_cast<float>(FMath::Max(1, TrailSamples.Num() - 1)) * 3.8f;
         const FVector LocalTangent = OwnerTransform.InverseTransformVectorNoScale(
             TrailDirectionWorld).GetSafeNormal();
-        Tangents.Add(FProcMeshTangent(LocalTangent, false));
-        Tangents.Add(FProcMeshTangent(LocalTangent, false));
+
+        for (int32 Side = 0; Side < AetherVapor::TrailTubeSides; ++Side)
+        {
+            const float Angle = TWO_PI * static_cast<float>(Side)
+                / static_cast<float>(AetherVapor::TrailTubeSides) + CrossSectionRoll;
+            const FVector Offset = AxisSide * FMath::Cos(Angle) * HorizontalRadius
+                + AxisUp * FMath::Sin(Angle) * VerticalRadius;
+            const FVector SurfaceNormalWorld = (
+                AxisSide * FMath::Cos(Angle) / FMath::Max(HorizontalRadius, 1.0f)
+                + AxisUp * FMath::Sin(Angle) / FMath::Max(VerticalRadius, 1.0f)).GetSafeNormal();
+
+            Vertices.Add(OwnerTransform.InverseTransformPosition(Center + Offset));
+            Normals.Add(OwnerTransform.InverseTransformVectorNoScale(
+                SurfaceNormalWorld).GetSafeNormal());
+            UVs.Add(FVector2D(U, static_cast<float>(Side)
+                / static_cast<float>(AetherVapor::TrailTubeSides)));
+            Colors.Add(FLinearColor(0.86f, 0.91f, 0.94f, Alpha));
+            Tangents.Add(FProcMeshTangent(LocalTangent, false));
+        }
 
         if (Index > 0)
         {
-            const int32 Current = StartVertex + Index * 2;
-            const int32 Previous = Current - 2;
-            Triangles.Append({
-                Previous, Current, Previous + 1,
-                Previous + 1, Current, Current + 1
-            });
+            const int32 CurrentRing = StartVertex + Index * AetherVapor::TrailTubeSides;
+            const int32 PreviousRing = CurrentRing - AetherVapor::TrailTubeSides;
+            for (int32 Side = 0; Side < AetherVapor::TrailTubeSides; ++Side)
+            {
+                const int32 NextSide = (Side + 1) % AetherVapor::TrailTubeSides;
+                const int32 A = PreviousRing + Side;
+                const int32 B = CurrentRing + Side;
+                const int32 C = PreviousRing + NextSide;
+                const int32 D = CurrentRing + NextSide;
+                Triangles.Append({A, B, C, C, B, D});
+            }
         }
     }
 }
@@ -377,21 +404,16 @@ void UAetherWingVaporComponent::BuildWingtipTrails()
     TArray<FVector2D> UVs;
     TArray<FLinearColor> Colors;
     TArray<FProcMeshTangent> Tangents;
-    const int32 EstimatedVertices = TrailSamples.Num() * 2
-        * AetherVapor::TrailPlanes * 2;
+    const int32 EstimatedVertices = TrailSamples.Num()
+        * AetherVapor::TrailTubeSides * 2;
     Vertices.Reserve(EstimatedVertices);
     Normals.Reserve(EstimatedVertices);
     UVs.Reserve(EstimatedVertices);
     Colors.Reserve(EstimatedVertices);
     Tangents.Reserve(EstimatedVertices);
 
-    for (int32 Plane = 0; Plane < AetherVapor::TrailPlanes; ++Plane)
-    {
-        const float PlaneAngle = PI * static_cast<float>(Plane)
-            / static_cast<float>(AetherVapor::TrailPlanes);
-        AppendTrailRibbon(true, PlaneAngle, Vertices, Triangles, Normals, UVs, Colors, Tangents);
-        AppendTrailRibbon(false, PlaneAngle, Vertices, Triangles, Normals, UVs, Colors, Tangents);
-    }
+    AppendTrailTube(true, Vertices, Triangles, Normals, UVs, Colors, Tangents);
+    AppendTrailTube(false, Vertices, Triangles, Normals, UVs, Colors, Tangents);
 
     WingtipTrails->CreateMeshSection_LinearColor(
         0, Vertices, Triangles, Normals, UVs, Colors, Tangents, false);
