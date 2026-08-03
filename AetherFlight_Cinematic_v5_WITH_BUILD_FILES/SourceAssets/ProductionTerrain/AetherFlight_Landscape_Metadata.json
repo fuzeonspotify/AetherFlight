@@ -1,0 +1,19 @@
+{
+  "seed": 1847,
+  "resolution": 4033,
+  "world_size_meters": 48000.0,
+  "xy_scale_centimeters": 1190.4761904761904,
+  "z_scale_centimeters": 1093.75,
+  "height_encoding": "32768 is sea level; positive range reaches +2800 m",
+  "airbase_world_meters": [
+    -6500.0,
+    -9000.0,
+    115.0
+  ],
+  "landscape_layers": [
+    "Grass",
+    "Rock",
+    "Scree",
+    "Snow"
+  ]
+}

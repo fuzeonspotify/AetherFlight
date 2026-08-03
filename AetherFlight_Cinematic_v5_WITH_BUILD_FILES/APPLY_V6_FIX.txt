@@ -1,0 +1,30 @@
+AETHER FLIGHT V6 LOG CLEANUP / GRAPHICS FIX
+============================================
+
+This patch does not delete your imported aircraft, generated materials, or experience.
+
+1. Stop Play and close Unreal Editor.
+2. Extract AetherFlight_v6_FIX_FILES_ONLY.zip directly into your existing
+   AetherFlight project folder (the folder containing AetherFlight.uproject).
+3. Allow Windows to replace the five existing project files.
+4. Run BUILD_ME_FIRST.cmd or Build_AetherFlight.bat.
+5. Open AetherFlight.uproject.
+6. Tools > Execute Python Script:
+      Content\Python\ImportStealthDrone.py
+   Running it again repairs the existing mesh's shading and disables Nanite
+   because its translucent sticker material is not Nanite-compatible.
+7. Tools > Execute Python Script:
+      Content\Python\InstallCinematicMaterials.py
+   Running it again rebuilds only the broken ocean material with a stable PBR graph.
+8. Restart Play.
+
+Expected result:
+- No ocean "Missing Sine/Cosine input" compile errors.
+- No Nanite translucent sticker warning during Play.
+- No physics material initialization error.
+- No missing VertexColorMaterial warning when the real aircraft is installed.
+- Greatly reduced Virtual Shadow Map pressure from the procedural terrain.
+
+The first drone import itself may still print source-mesh tangent warnings before
+the repair settings are applied. The script then rebuilds and saves corrected
+normals/tangents for subsequent sessions.

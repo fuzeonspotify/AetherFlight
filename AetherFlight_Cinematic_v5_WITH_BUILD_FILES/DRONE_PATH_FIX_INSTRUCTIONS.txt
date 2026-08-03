@@ -1,0 +1,8 @@
+AETHER FLIGHT DRONE PATH FIX
+
+1. Close Play mode in Unreal.
+2. Extract this ZIP directly into the folder containing AetherFlight.uproject.
+3. Allow Windows to replace Content\Python\ImportStealthDrone.py.
+4. In Unreal, choose Tools > Execute Python Script and run Content\Python\ImportStealthDrone.py.
+5. Wait for: [Aether Setup] Production airframe ready: /Game/Aircraft/StealthDrone/SM_StealthDrone.SM_StealthDrone
+6. Press Play. No C++ rebuild is required.

@@ -1,0 +1,9 @@
+AETHER FLIGHT UE 5.8 BUILD FIX
+
+1. Close Unreal Engine.
+2. Extract this repair ZIP directly into the folder that contains AetherFlight.uproject.
+3. Allow Windows to replace the two existing Target.cs files.
+4. Double-click Build_AetherFlight.bat.
+5. Do not open AetherFlight.uproject until the script says BUILD SUCCEEDED.
+
+If it says BUILD FAILED, upload Build_AetherFlight.log from the same folder.

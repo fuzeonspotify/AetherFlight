@@ -1,0 +1,127 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Pawn.h"
+#include "CinematicFlightPawn.generated.h"
+
+class UBoxComponent;
+class UCameraComponent;
+class UProceduralMeshComponent;
+class USceneComponent;
+class USpringArmComponent;
+class UStaticMeshComponent;
+
+UENUM(BlueprintType)
+enum class EFlightCameraMode : uint8
+{
+    Cockpit,
+    Chase,
+    Wing,
+    Cinematic
+};
+
+UCLASS()
+class AETHERFLIGHT_API ACinematicFlightPawn : public APawn
+{
+    GENERATED_BODY()
+
+public:
+    ACinematicFlightPawn();
+
+    virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
+    virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+    UFUNCTION(BlueprintCallable, Category = "Flight")
+    void ResetAircraft();
+
+    float GetAirspeedKnots() const;
+    float GetAltitudeFeet() const;
+    float GetMach() const;
+    float GetThrottle() const { return Throttle; }
+    float GetGForce() const { return SmoothedGForce; }
+    FString GetCameraModeName() const;
+
+protected:
+    UPROPERTY(VisibleAnywhere, Category = "Aircraft")
+    UBoxComponent* PhysicsBody;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aircraft")
+    UStaticMeshComponent* AirframeMesh;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aircraft")
+    UProceduralMeshComponent* FallbackAirframe;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    USceneComponent* CockpitAnchor;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    UCameraComponent* CockpitCamera;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    USpringArmComponent* ChaseArm;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    UCameraComponent* ChaseCamera;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    USceneComponent* WingAnchor;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    UCameraComponent* WingCamera;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    UCameraComponent* CinematicCamera;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Airframe", meta = (ClampMin = "1000.0"))
+    float AircraftMassKg = 8500.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Airframe")
+    float WingAreaSquareMeters = 42.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Engine")
+    float MaximumThrustNewtons = 128000.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Aero")
+    float LiftSlopePerRadian = 4.4f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Aero")
+    float ZeroLiftDrag = 0.024f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Aero")
+    float InducedDragFactor = 0.11f;
+
+private:
+    void BuildFallbackAirframe();
+    void LoadImportedAirframe();
+    void ApplyAerodynamics(float DeltaSeconds);
+    void UpdateCamera(float DeltaSeconds);
+    void ActivateCamera(EFlightCameraMode NewMode);
+
+    void InputThrottle(float Value);
+    void InputPitch(float Value);
+    void InputRoll(float Value);
+    void InputYaw(float Value);
+    void InputMouseX(float Value);
+    void InputMouseY(float Value);
+    void BeginFreeLook();
+    void EndFreeLook();
+    void CycleCamera();
+    void ToggleCinematicCamera();
+    void CycleWeather();
+
+    float Throttle = 0.72f;
+    float PitchInput = 0.0f;
+    float RollInput = 0.0f;
+    float YawInput = 0.0f;
+    float MouseFlightX = 0.0f;
+    float MouseFlightY = 0.0f;
+    float LookYaw = 0.0f;
+    float LookPitch = 0.0f;
+    float SmoothedGForce = 1.0f;
+    FVector PreviousVelocity = FVector::ZeroVector;
+    bool bFreeLook = false;
+    bool bHasImportedAirframe = false;
+    float CinematicTime = 0.0f;
+    EFlightCameraMode CameraMode = EFlightCameraMode::Chase;
+};

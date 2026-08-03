@@ -1,0 +1,46 @@
+# AetherFlight / Unreal Engine 5
+# Keep: Config, Content, Plugins source, Source, SourceAssets, .uproject,
+# build scripts, .gitattributes, and this file.
+
+# Unreal-generated folders
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Generated data inside source plugins
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Local packaged or staged builds
+Builds/
+StagedBuilds/
+
+# Per-developer Unreal content
+Content/Developers/
+
+# Visual Studio / Rider / VS Code generated state
+.vs/
+.idea/
+.vscode/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.user
+*.userprefs
+
+# Compiler and editor temporary files
+*.pdb
+*.obj
+*.ipch
+*.tmp
+*.temp
+*.log
+
+# Operating-system clutter
+.DS_Store
+Thumbs.db
+Desktop.ini
