@@ -7,6 +7,7 @@
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UHierarchicalInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
 class UPostProcessComponent;
 class UProceduralMeshComponent;
 class USceneComponent;
@@ -58,6 +59,9 @@ protected:
 
     UPROPERTY(VisibleAnywhere, Category = "World")
     UProceduralMeshComponent* Ocean;
+
+    UPROPERTY(Transient)
+    UMaterialInstanceDynamic* OceanMaterialInstance = nullptr;
 
     UPROPERTY(VisibleAnywhere, Category = "World")
     UStaticMeshComponent* Runway;
@@ -113,6 +117,7 @@ protected:
 private:
     void GenerateTerrain();
     void GenerateOcean();
+    void UpdateOceanSurface(float DeltaSeconds);
     void GenerateRunwayMarkings();
     void GenerateEnvironmentInstances();
     void ConfigureAtmosphere();
@@ -132,6 +137,12 @@ private:
     bool bUsingProductionLandscape = false;
     float CurrentStorminess = 0.0f;
     float TargetStorminess = 0.0f;
+    float CurrentSeaState = 0.68f;
+    float TargetSeaState = 0.68f;
+    float CurrentOceanRoughness = 0.075f;
+    float TargetOceanRoughness = 0.075f;
+    float CurrentFoamAmount = 0.18f;
+    float TargetFoamAmount = 0.18f;
     float TargetFogDensity = 0.002f;
     float TargetSunIntensity = 7.0f;
     FLinearColor TargetSunColor = FLinearColor::White;
