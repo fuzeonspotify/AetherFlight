@@ -1,5 +1,7 @@
 #include "AetherBiomeScatterActor.h"
 
+#include "AssetRegistry/ARFilter.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -7,6 +9,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "LandscapeProxy.h"
+#include "Modules/ModuleManager.h"
 #include "TimerManager.h"
 
 namespace AetherEnvironment
@@ -87,6 +90,43 @@ UStaticMesh* AAetherBiomeScatterActor::LoadFirstAvailable(
     return nullptr;
 }
 
+TArray<UStaticMesh*> AAetherBiomeScatterActor::LoadLargestMeshesInPaths(
+    const TArray<FName>& PackagePaths, const int32 MaxMeshes) const
+{
+    TArray<UStaticMesh*> Meshes;
+    if (PackagePaths.Num() == 0 || MaxMeshes <= 0)
+    {
+        return Meshes;
+    }
+
+    FAssetRegistryModule& AssetRegistryModule =
+        FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+    FARFilter Filter;
+    Filter.PackagePaths.Append(PackagePaths);
+    Filter.ClassPaths.Add(UStaticMesh::StaticClass()->GetClassPathName());
+    Filter.bRecursivePaths = true;
+
+    TArray<FAssetData> Assets;
+    AssetRegistryModule.Get().GetAssets(Filter, Assets);
+    for (const FAssetData& Asset : Assets)
+    {
+        if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset()))
+        {
+            Meshes.AddUnique(Mesh);
+        }
+    }
+
+    Meshes.Sort([](const UStaticMesh& Left, const UStaticMesh& Right)
+    {
+        return Left.GetBounds().BoxExtent.SizeSquared() > Right.GetBounds().BoxExtent.SizeSquared();
+    });
+    if (Meshes.Num() > MaxMeshes)
+    {
+        Meshes.SetNum(MaxMeshes);
+    }
+    return Meshes;
+}
+
 void AAetherBiomeScatterActor::BuildEnvironment()
 {
     if (bBuilt || !GetWorld())
@@ -123,6 +163,33 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Rocks/SM_Boulder_B.SM_Boulder_B")),
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Rocks/SM_CliffRock_B.SM_CliffRock_B"))
     });
+
+    // Keep third-party pack names intact. The largest complete meshes in the
+    // known source folders are selected automatically when Aether aliases do
+    // not exist.
+    const TArray<UStaticMesh*> PineMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Pine"))
+    }, 2);
+    const TArray<UStaticMesh*> AspenMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Aspen"))
+    }, 1);
+    const TArray<UStaticMesh*> RockMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/Aether/Environment/Rocks")),
+        FName(TEXT("/Game/Rocks")),
+        FName(TEXT("/Game/Rock_01")),
+        FName(TEXT("/Game/Rock_02")),
+        FName(TEXT("/Game/Rock_03")),
+        FName(TEXT("/Game/Rock_04")),
+        FName(TEXT("/Game/Rock_05")),
+        FName(TEXT("/Game/Rock_06")),
+        FName(TEXT("/Game/Rock_07"))
+    }, 2);
+
+    ConiferA = ConiferA ? ConiferA : (PineMeshes.Num() > 0 ? PineMeshes[0] : nullptr);
+    ConiferB = ConiferB ? ConiferB : (PineMeshes.Num() > 1 ? PineMeshes[1] : nullptr);
+    Broadleaf = Broadleaf ? Broadleaf : (AspenMeshes.Num() > 0 ? AspenMeshes[0] : nullptr);
+    BoulderA = BoulderA ? BoulderA : (RockMeshes.Num() > 0 ? RockMeshes[0] : nullptr);
+    BoulderB = BoulderB ? BoulderB : (RockMeshes.Num() > 1 ? RockMeshes[1] : nullptr);
 
     if (!ConiferA && !ConiferB && !Broadleaf && !Shrub && !Cover && !BoulderA && !BoulderB)
     {
