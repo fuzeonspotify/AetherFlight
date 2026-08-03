@@ -1,113 +1,96 @@
-# Aether Flight — UE 5.8 Mesh Terrain Migration
+# Aether Flight — Clean UE 5.8 Mesh Terrain Build
 
-This is the AetherFlight implementation of the UE 5.8 Mesh Terrain workflow in
-Unreal Sensei's video. It replaces the old heightfield renderer with a
-World-Partitioned, Nanite-backed mesh terrain that supports non-destructive
-modifiers, local remeshing, cliffs, overhangs, caves, water interaction, weight
-channels, and PCG.
+This is the only supported terrain workflow for AetherFlight. It follows the
+non-destructive UE 5.8 Mesh Terrain workflow demonstrated in Unreal Sensei's
+**How to Use Unreal Engine's New Landscape System — Mesh Terrain Tutorial**.
 
-Mesh Terrain is **Experimental in UE 5.8**. The migration therefore keeps the
-working `Landscape_Production_V2_4033` recoverable until the new runtime sections
-and collision have been verified. No script in this workflow deletes a Landscape.
+The old classic Landscape migration is retired. The reset removes every current
+Landscape and Mesh Partition actor from `/Game/Maps/AetherWorld`, deletes generated
+Mesh Terrain assets, and recreates one clean authoring stack. It preserves the
+aircraft, runway, HUD, controls, weather, water actors, source heightmaps,
+weightmaps, and reusable terrain textures.
 
-## What this patch installs
+Mesh Terrain is experimental in UE 5.8. Build and save often.
 
-- the four required Mesh Terrain plugins
-- `M_MeshTerrain_Aether`, a Nanite-safe automatic triplanar biome material
-- `MPD_AetherWorld`, with Aether biome channels and modifier priorities
-- three correctly named transformer-pipeline shells
-- the seven existing production biome masks as Mesh Terrain weight textures
-- runtime recognition of an authoritative Mesh Partition actor
-- a guarded finalizer and one-click Landscape rollback
+## 1. Run the clean reset
 
-The automatic material uses world-space triplanar projection, height/slope biome
-selection, and kilometer-scale breakup. It does not depend on the paid/downloaded
-material shown in the video and does not stretch on vertical cliff faces.
-
-## 1. Pull and rebuild once
-
-Close Unreal Editor. In PowerShell:
+Close Unreal Editor. From the project folder, run:
 
 ```powershell
-cd C:\Projects\AetherFlight
-git pull origin agent/high-quality-biome-scatter
-cd .\AetherFlight_Cinematic_v5_WITH_BUILD_FILES
-.\BUILD_ME_FIRST.cmd
+.\RESET_AETHER_TERRAIN_UE58.ps1
 ```
 
-Open `AetherFlight.uproject`. The first launch can take longer while the four new
-experimental plugins load.
+The script performs these operations:
 
-## 2. Install the Aether authoring assets
+1. Builds `AetherFlightEditor`.
+2. Opens `AetherWorld` through Unreal's Python command-line support.
+3. Deletes all classic Landscape actors, Landscape streaming proxies, Mesh
+   Partition roots, generated sections, and Mesh Terrain modifiers.
+4. Deletes `/Game/Aether/MeshTerrain` and old Landscape-only generated assets.
+5. Preserves `/Game/Aether/ProductionTerrain/Textures` for the new material.
+6. Recreates the clean material, MPD, three pipeline shells, channels, and masks.
+7. Reopens `AetherWorld`.
 
-Open `/Game/Maps/AetherWorld`, stop PIE, then run:
+Successful runs create:
 
-`Content/Python/InstallAetherMeshTerrain_UE58.py`
+- `Saved/AetherTerrainReset.txt`
+- `Saved/AetherMeshTerrainInstall.txt`
 
-The installer is idempotent. It creates or refreshes:
+## 2. Fill the transformer pipelines
 
-| Asset | Purpose |
-|---|---|
-| `M_MeshTerrain_Aether` | automatic triplanar material |
-| `MPD_AetherWorld` | material, channels, modifier priorities, build variants |
-| `TP_Preview_AetherWorld` | fast editor preview |
-| `TP_Compiled_HighEnd_AetherWorld` | Nanite visual runtime sections |
-| `TP_Compiled_Common_AetherWorld` | shared runtime collision |
+UE 5.8 exposes transformer arrays as `TInstancedStruct`. Unreal Python cannot
+reliably author those entries, so this remains a one-time Details-panel step.
 
-If it says `MeshPartitionDefinition is unavailable`, close and reopen Unreal once.
-The plugins are loaded only after an editor restart.
+### `TP_Preview_AetherWorld`
 
-## 3. Fill the three transformer pipelines
+Add in this order:
 
-Python cannot create Unreal's `TInstancedStruct` transformer entries. This is the
-only data-asset setup that must be done in the Details panel.
-
-Open `/Game/Aether/MeshTerrain/TP_Preview_AetherWorld` and add, in order:
-
-1. **Subsection Transformer** — `Sub Section Size = 65536`
+1. **Subsection Transformer** — `Sub Section Size = 65536 cm`
 2. **Static Mesh Transformer** — enable **Nanite** and **Skirts**
 3. **Collision Transformer** — `Error Tolerance = 100 cm`
-4. **WP Actor Properties Transformer** — use the main World Partition runtime grid
+4. **WP Actor Properties Transformer** — leave Runtime Grid as `None` when no
+   named runtime grid is offered; World Partition will choose the map default
 
-Open `TP_Compiled_HighEnd_AetherWorld` and add, in order:
+### `TP_Compiled_HighEnd_AetherWorld`
+
+Add in this order:
 
 1. **Far Field Transformer** — `Far Field Mesh Edge Length = 10000 cm`
-2. **Subsection Transformer** — `Sub Section Size = 65536`
+2. **Subsection Transformer** — `Sub Section Size = 65536 cm`
 3. **Static Mesh Transformer** — enable **Nanite** and **Skirts**
-4. **WP Actor Properties Transformer** — use the main runtime grid
+4. **WP Actor Properties Transformer** — map default grid is acceptable
 
-For the Static Mesh Transformer, use the terrain-style LOD mode **Derive Screen
-Size from Error**, `Pixel Error = 8`, with:
+Use **Derive Screen Size from Error**, `Pixel Error = 8`:
 
 | LOD | Error tolerance | Maximum triangle fraction |
 |---|---:|---:|
-| 0 | source geometry | 1.00 |
-| 1 | 4 cm | 0.50 |
-| 2 | 16 cm | 0.25 |
-| 3 | 64 cm | 0.10 |
+| 0 | source geometry | `1.00` |
+| 1 | `4 cm` | `0.50` |
+| 2 | `16 cm` | `0.25` |
+| 3 | `64 cm` | `0.10` |
 
-Open `TP_Compiled_Common_AetherWorld` and add, in order:
+### `TP_Compiled_Common_AetherWorld`
 
-1. **Subsection Transformer** — `Sub Section Size = 65536`
+Add in this order:
+
+1. **Subsection Transformer** — `Sub Section Size = 65536 cm`
 2. **Collision Transformer** — `Error Tolerance = 100 cm`
-3. **WP Actor Properties Transformer** — use the main runtime grid
+3. **WP Actor Properties Transformer** — map default grid is acceptable
 
-Do not add the deprecated Mesh Skirt Transformer. Skirts are enabled inside the
+Do not add the deprecated Mesh Skirt Transformer. Enable skirts inside the
 Static Mesh Transformer.
 
-## 4. Finish `MPD_AetherWorld`
+## 3. Verify `MPD_AetherWorld`
 
-Open `/Game/Aether/MeshTerrain/MPD_AetherWorld` and confirm:
+Open `/Game/Aether/MeshTerrain/MPD_AetherWorld` and set:
 
 - Material: `M_MeshTerrain_Aether`
 - Channel Texel Size: `400 cm`
 - Material Cache Texel Size: `800 cm`
 - Channel UV Layout Method: **Plane Project**
-- Modifier Layer Priorities, in order:
-  `Base`, `Erosion`, `Hydrology`, `LocalDetail`, `Paint`
+- Modifier priorities: `Base`, `Erosion`, `Hydrology`, `LocalDetail`, `Paint`
 
-The installer normally creates these channels. If the log said Python could not
-author the channel map, add them manually in this exact order:
+Channels, in order:
 
 1. `Grass`
 2. `ForestFloor`
@@ -120,116 +103,133 @@ author the channel map, add them manually in this exact order:
 9. `Forest`
 10. `FoliageExclusion`
 
-Set the Preview section to:
+Preview section:
 
 - Max Section Complexity: `250000`
-- Transformer Pipeline: `TP_Preview_AetherWorld`
+- Pipeline: `TP_Preview_AetherWorld`
 
-Add these Compiled Section Build Variants:
+Compiled variants:
 
-| Name | Max section complexity | Pipeline |
+| Variant | Max complexity | Pipeline |
 |---|---:|---|
-| `HighEnd` | 250000 | `TP_Compiled_HighEnd_AetherWorld` |
-| `Common` | 250000 | `TP_Compiled_Common_AetherWorld` |
+| `HighEnd` | `250000` | `TP_Compiled_HighEnd_AetherWorld` |
+| `Common` | `250000` | `TP_Compiled_Common_AetherWorld` |
 
-Under **Platforms > Default > Build Variant Names**, add both `HighEnd` and
-`Common`.
+Under **Platforms > Default > Build Variant Names**, add `HighEnd` and `Common`.
 
-## 5. Import the production heightmap as Mesh Terrain
+## 4. Import the clean production heightmap
 
-The current map is already a World Partition level, which Mesh Terrain requires.
+Open `/Game/Maps/AetherWorld`, then switch to **Mesh Terrain** mode.
 
-1. Switch the editor mode to **Mesh Terrain**.
-2. Open **Create > Import Heightmap**.
-3. Select:
-   `SourceAssets/ProductionTerrain/Heightmaps/AetherFlight_4033.r16`
-4. Set the mesh to:
+Choose **Create > Import Heightmap** and select:
+
+```text
+SourceAssets/ProductionTerrain/Heightmaps/AetherFlight_4033_16bit.png
+```
+
+Do not use or rename `AetherFlight_4033.r16`. The UE 5.8 Mesh Terrain importer
+requires the 16-bit PNG in this project.
+
+Use:
 
 | Setting | Value |
 |---|---:|
-| Resolution | `4033 x 4033` vertices |
+| Resolution when labeled **quads** | `4032 x 4032` |
+| Resolution when labeled **samples/vertices** | `4033 x 4033` |
 | Size X | `4,800,000 cm` |
 | Size Y | `4,800,000 cm` |
 | Size Z | `560,000 cm` |
-| Sections | explicit `32 x 32` when available |
-| Per-section resolution | `127 x 127` vertices / `126 x 126` quads |
+| Sections | explicit `32 x 32` |
+| Per-section resolution | `126 x 126` quads / `127 x 127` vertices |
 | Save and Unload | enabled |
 | Definition | `MPD_AetherWorld` |
 
-If your build labels Resolution as **quads**, enter `4032 x 4032`; the source is
-4033 samples and therefore contains 4032 quads. Do not accept a padded/clipped
-import.
+The source has 4033 samples and therefore 4032 quads. The 48 km world size is
+`48,000 m × 100 = 4,800,000 cm`.
 
-The R16 source encodes sea level at value 32768 and a physical range of
-`-2800 m` to `+2800 m`. If the importer places the minimum height at world Z=0,
-set the new Mesh Partition actor's Z location to `-280000 cm`. If its coastline
-already meets the ocean at world Z=0, leave its Z location unchanged.
+Rename the new root actor:
 
-Rename the root actor:
+```text
+MeshTerrain_AetherWorld
+```
 
-`MeshTerrain_AetherWorld`
+The heightmap encodes sea level at 32768 across a `-2800 m` to `+2800 m` range.
+The coastline should meet the ocean near world `Z = 0`. If the importer maps the
+minimum height to zero instead of centering the range, set the root actor's
+Location Z to `-280000 cm`. Do not change X/Y scale after import.
 
-At this point the old Landscape should still be enabled. Hide it temporarily
-with the eye icon only while visually inspecting the Mesh Terrain; do not run the
-finalizer yet.
+## 5. Build the non-destructive modifier stack
 
-## 6. Add the non-destructive detail stack
+Open **Tools > Mesh Partition Settings**. This stack follows the video workflow:
 
-Use **Tools > Mesh Partition Settings** to open the Mesh Partition Outliner. Put
-modifiers in these layers:
+### `Base`
 
-- **Base** — imported 4033 heightmap only
-- **Erosion** — broad Noise modifiers; keep them low-frequency
-- **Hydrology** — Lake/River water modifiers and shoreline corrections
-- **LocalDetail** — Remesh before detailed cliff, cave, and shoreline modifiers
-- **Paint** — manual channel cleanup and art direction
+- Imported 4033-sample heightmap only
+- Never destructively edit or globally remesh the base
 
-For the 48 km world, never globally remesh the entire terrain to cinematic
-density. Use local Remesh or Spline Remesh modifiers around shorelines, the
-airbase, hero valleys, cliffs, riverbanks, and cave entrances. Nanite handles
-the resulting local density while distant mountains remain inexpensive.
+### `Erosion`
 
-The imported textures in `/Game/Aether/MeshTerrain/Weightmaps` are source masks
-for Texture/Project modifiers and PCG. They are not heightmaps. Use the matching
-channel name when projecting each mask.
+- Broad Noise or Texture modifiers for mountain breakup and erosion
+- Keep these low frequency across the 48 km world
 
-For each existing Lake or River Water Body, add its Mesh Partition Water modifier,
-set **Affected Mesh Partition** to `MeshTerrain_AetherWorld`, and place it in the
-`Hydrology` priority. Ocean requires no terrain modifier.
+### `Hydrology`
 
-## 7. Build runtime terrain, then switch over
+- River and Lake Mesh Partition Water modifiers
+- Spline modifiers for riverbeds, shorelines, and drainage cuts
+- Ocean needs no terrain deformation modifier
 
-1. Use **Build > Build Mesh Partition**.
-2. Wait for Mesh Partition, Nanite, collision, and shader jobs to finish.
-3. In the Outliner filter, enable **Show Build Mesh Partition Sections**.
-4. Verify the compiled sections are visible and collision works.
-5. Run `Content/Python/AuditAetherMeshTerrain_UE58.py` and clear every `MISSING` item.
-6. Save All.
-7. Run `Content/Python/FinalizeAetherMeshTerrainMigration_UE58.py`.
-8. Confirm only after the build has succeeded.
+### `LocalDetail`
+
+- Add a local Remesh or Spline Remesh modifier before detailed sculpting
+- Use Sculpt/Brush modifiers for airbase grading, hero valleys, cliffs, and
+  shoreline corrections
+- Use Static Mesh or Boolean modifiers for caves, arches, overhangs, and tunnels
+- Never remesh the entire 48 km terrain to cinematic density
+
+### `Paint`
+
+- Paint biome channels for art direction and cleanup
+- Project the imported masks from `/Game/Aether/MeshTerrain/Weightmaps`
+- Use `FoliageExclusion` around the runway, taxiways, buildings, roads, and caves
+
+`M_MeshTerrain_Aether` provides automatic height/slope biome selection,
+world-space triplanar projection for cliffs, and kilometer-scale breakup. The
+paint channels are used to refine that automatic result and to drive PCG.
+
+## 6. Build and activate the runtime terrain
+
+1. Choose **Build > Build Mesh Partition**.
+2. Wait for Mesh Partition, Nanite, collision, and shader work to finish.
+3. In the Outliner, enable **Show Build Mesh Partition Sections**.
+4. Verify section seams, collision, coastline, and close-range cliff detail.
+5. Run:
+   `Content/Python/AuditAetherMeshTerrainClean_UE58.py`
+6. Resolve every `MISSING` or `FAIL` entry.
+7. Run:
+   `Content/Python/ActivateAetherMeshTerrain_UE58.py`
+8. Save All.
 9. Close Unreal and run `BUILD_ME_FIRST.cmd` once more.
-10. Open AetherWorld, press Play, then press `R` once.
+10. Open `AetherWorld` and press Play.
 
-The finalizer tags the Mesh Partition as `AetherProductionTerrain`, disables every
-old Landscape proxy in editor/game, and disables its collision. The C++ runtime
-guard then treats Mesh Terrain as the authored ground and keeps the fallback mesh
-cleared.
+The activation script refuses to continue when a classic Landscape remains or
+when more than one Mesh Partition root exists. It tags the single clean root as
+`AetherProductionTerrain`, which the runtime director recognizes while keeping
+the old procedural fallback cleared.
 
-## Roll back without losing work
+## 7. Acceptance checks
 
-Stop PIE and run:
+Before adding vegetation or detailed water work, verify:
 
-`Content/Python/RestoreAetherLandscapeFallback_UE58.py`
+- zero classic Landscape actors in `AetherWorld`
+- exactly one root named `MeshTerrain_AetherWorld`
+- no duplicate/overlapping terrain in PIE
+- coastline near `Z = 0`
+- generated sections have Nanite enabled
+- collision works at the runway and mountain slopes
+- no visible cracks between generated sections
+- PIE starts after the Mesh Partition build completes
+- distant sections stream through World Partition
+- triplanar material does not stretch on vertical cliffs
 
-This reactivates the production Landscape and moves Mesh Terrain back to preview.
-No assets or actors are deleted.
-
-## Expected result
-
-- no overlapping Landscape or rectangular wall artifacts
-- no top-down texture stretching on cliffs
-- broad, non-repeating grass/forest/rock/scree/snow/sand/wetland transitions
-- locally dense Nanite geometry at hero locations
-- true caves, overhangs, and vertical formations where modifiers are added
-- PCG/foliage masks available as Mesh Partition channels
-- independent, simplified collision and World Partition streaming
+Only after these pass should PCG foliage, rocks, roads, rivers, caves, and airbase
+set dressing be added.
