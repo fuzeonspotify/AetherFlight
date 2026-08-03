@@ -12,9 +12,9 @@ class UStaticMesh;
 /**
  * Runtime ecosystem pass for the production Landscape.
  *
- * Instances are deterministic, clustered, slope/altitude aware, and rendered
- * through HISM components so the flight world can contain thousands of trees
- * and rocks without creating thousands of Actors.
+ * Instances are deterministic, biome-driven, slope/altitude aware, and streamed
+ * in HISM chunks around the aircraft so the full flight world stays populated
+ * without creating thousands of Actors or a large startup hitch.
  */
 UCLASS(Blueprintable)
 class AETHERFLIGHT_API AAetherBiomeScatterActor : public AActor
@@ -91,13 +91,25 @@ protected:
     int32 TreeInstanceBudget = 62000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "50000"))
-    int32 ShrubInstanceBudget = 22000;
+    int32 ShrubInstanceBudget = 12000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "60000"))
-    int32 GroundCoverInstanceBudget = 32000;
+    int32 GroundCoverInstanceBudget = 18000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Rocks", meta = (ClampMin = "0", ClampMax = "20000"))
-    int32 RockInstanceBudget = 9000;
+    int32 RockInstanceBudget = 2400;
+
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Streaming", meta = (ClampMin = "100000.0", ClampMax = "500000.0"))
+    float EcosystemChunkSizeCm = 240000.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Streaming", meta = (ClampMin = "1", ClampMax = "6"))
+    int32 StreamingRadiusInChunks = 4;
+
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Streaming", meta = (ClampMin = "1", ClampMax = "20"))
+    int32 MaxNewChunksPerUpdate = 6;
+
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Streaming", meta = (ClampMin = "0.25", ClampMax = "5.0"))
+    float StreamingUpdateSeconds = 1.0f;
 
 private:
     UHierarchicalInstancedStaticMeshComponent* CreateScatterComponent(
@@ -105,6 +117,8 @@ private:
     UStaticMesh* LoadFirstAvailable(const TArray<FSoftObjectPath>& CandidatePaths) const;
     TArray<UStaticMesh*> LoadLargestMeshesInPaths(
         const TArray<FName>& PackagePaths, int32 MaxMeshes) const;
+    UStaticMesh* LoadFirstMeshMatchingKeywords(
+        const TArray<FName>& PackagePaths, const TArray<FString>& Keywords) const;
     TArray<UHierarchicalInstancedStaticMeshComponent*> GetTreeComponents() const;
     int32 GetTreeInstanceCount() const;
     TArray<UHierarchicalInstancedStaticMeshComponent*> GetRockComponents() const;
@@ -117,11 +131,20 @@ private:
     void TryAddUnderstory(float X, float Y, FRandomStream& Random);
     void GenerateForest(const FBox2D& Bounds, FRandomStream& Random);
     void GenerateRocks(const FBox2D& Bounds, FRandomStream& Random);
+    void StreamEnvironmentAroundPlayer();
+    bool IsChunkLandscapeReady(const FBox2D& Bounds) const;
     void DisableLegacyScatterIfReplaced();
     float ValueNoise(float X, float Y) const;
     float HashNoise(int32 X, int32 Y) const;
 
     FTimerHandle ScatterBuildTimer;
+    FBox2D CachedLandscapeBounds;
+    TSet<FIntPoint> GeneratedChunks;
+    TSet<uint64> OccupiedTreeCells;
+    TSet<uint64> OccupiedSoloRockCells;
+    TSet<uint64> OccupiedFormationRockCells;
     int32 BuildAttempt = 0;
+    int32 StreamUpdateCount = 0;
+    bool bLandscapeBoundsReady = false;
     bool bBuilt = false;
 };
