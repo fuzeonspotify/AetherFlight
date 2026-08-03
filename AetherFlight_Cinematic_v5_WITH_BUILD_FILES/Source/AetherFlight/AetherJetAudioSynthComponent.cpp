@@ -53,33 +53,52 @@ namespace AetherJetAudio
                 CockpitMix += (TargetCockpit - CockpitMix) * StateSmoothing;
 
                 const float SpoolCurve = FMath::Pow(FMath::Max(Spool, 0.0f), 1.32f);
-                const float Flutter = 1.0f + 0.007f * FMath::Sin(ModulationPhase)
-                    + 0.003f * FMath::Sin(ModulationPhase * 2.31f);
-                const float FanHz = (72.0f + 355.0f * SpoolCurve + 24.0f * Mach) * Flutter;
-                const float CompressorHz = (390.0f + 1260.0f * SpoolCurve + 48.0f * LoadFactor) * Flutter;
+                const float Flutter = 1.0f + 0.006f * FMath::Sin(ModulationPhase)
+                    + 0.0025f * FMath::Sin(ModulationPhase * 2.31f);
+
+                // Keep a restrained mechanical turbine layer beneath the exhaust.
+                const float FanHz = (48.0f + 195.0f * SpoolCurve + 12.0f * Mach) * Flutter;
+                const float CompressorHz = (280.0f + 780.0f * SpoolCurve + 24.0f * LoadFactor) * Flutter;
+                const float CombustionHz = 27.0f + 43.0f * SpoolCurve;
 
                 AdvancePhase(FanPhase, FanHz);
                 AdvancePhase(FanHarmonicPhase, FanHz * 2.015f);
                 AdvancePhase(CompressorPhase, CompressorHz);
                 AdvancePhase(CompressorHarmonicPhase, CompressorHz * 1.985f);
+                AdvancePhase(CombustionPhase, CombustionHz);
                 AdvancePhase(ModulationPhase, 0.63f + 0.22f * Spool);
 
                 const float Turbine =
-                    FMath::Sin(FanPhase) * 0.26f
-                    + FMath::Sin(FanHarmonicPhase) * 0.12f
-                    + FMath::Sin(CompressorPhase) * (0.045f + 0.10f * SpoolCurve)
-                    + FMath::Sin(CompressorHarmonicPhase) * (0.025f + 0.055f * SpoolCurve);
+                    FMath::Sin(FanPhase) * 0.14f
+                    + FMath::Sin(FanHarmonicPhase) * 0.035f
+                    + FMath::Sin(CompressorPhase) * (0.012f + 0.025f * SpoolCurve)
+                    + FMath::Sin(CompressorHarmonicPhase) * (0.006f + 0.012f * SpoolCurve);
+                const float CombustionThrob =
+                    (FMath::Sin(CombustionPhase)
+                        + 0.32f * FMath::Sin(CombustionPhase * 2.0f)
+                        + 0.14f * FMath::Sin(CombustionPhase * 3.0f))
+                    * (0.055f + 0.18f * SpoolCurve);
 
-                const float White = NextNoise();
-                const float NoiseLowpassAlpha = 1.0f - FMath::Exp(
-                    -AetherJetAudio::TwoPi * (95.0f + 150.0f * Spool) / SampleRate);
-                RumbleState += (White - RumbleState) * NoiseLowpassAlpha;
+                // Two differently filtered noise streams form the broad, throaty jet-exhaust roar.
+                const float RumbleWhite = NextNoise();
+                const float RumbleLowpassAlpha = 1.0f - FMath::Exp(
+                    -AetherJetAudio::TwoPi * (82.0f + 135.0f * Spool) / SampleRate);
+                RumbleState += (RumbleWhite - RumbleState) * RumbleLowpassAlpha;
 
+                const float RoarWhite = NextNoise();
                 const float ExhaustLowpassAlpha = 1.0f - FMath::Exp(
-                    -AetherJetAudio::TwoPi * (1100.0f + 4200.0f * Spool) / SampleRate);
-                ExhaustState += (White - ExhaustState) * ExhaustLowpassAlpha;
-                const float ExhaustWash = (White * 0.52f + ExhaustState * 0.48f)
-                    * (0.16f + 0.38f * SpoolCurve);
+                    -AetherJetAudio::TwoPi * (720.0f + 1750.0f * Spool) / SampleRate);
+                const float RoarBassLowpassAlpha = 1.0f - FMath::Exp(
+                    -AetherJetAudio::TwoPi * (62.0f + 105.0f * Spool) / SampleRate);
+                ExhaustState += (RoarWhite - ExhaustState) * ExhaustLowpassAlpha;
+                RoarBassState += (RoarWhite - RoarBassState) * RoarBassLowpassAlpha;
+
+                const float RoarBand = ExhaustState - RoarBassState;
+                const float ExhaustBreath = 0.90f + 0.10f * FMath::Sin(ModulationPhase * 0.53f);
+                const float ExhaustRoar =
+                    (RoarBand * (0.40f + 0.78f * SpoolCurve)
+                        + RumbleState * (0.44f + 0.46f * Spool))
+                    * ExhaustBreath;
 
                 CrackleEnvelope *= FMath::Exp(-1.0f / (SampleRate * 0.022f));
                 if (Spool > 0.84f && (NextRandom() & 2047u) < static_cast<uint32>(2.0f + 12.0f * SpoolCurve))
@@ -88,7 +107,7 @@ namespace AetherJetAudio
                         + static_cast<float>(NextRandom() & 0xFFFFu) / 65535.0f * 0.60f;
                     CrackleEnvelope = FMath::Max(CrackleEnvelope, CrackleStrength);
                 }
-                const float Afterburner = White * CrackleEnvelope * FMath::Square(
+                const float Afterburner = NextNoise() * CrackleEnvelope * FMath::Square(
                     FMath::Clamp((Spool - 0.82f) / 0.18f, 0.0f, 1.0f));
 
                 const float WindAmount = FMath::Clamp(
@@ -97,11 +116,11 @@ namespace AetherJetAudio
                 WindState += (WindWhite - WindState) * 0.055f;
                 const float Wind = (WindWhite - WindState) * WindAmount * 0.21f;
 
-                float Sample = Turbine * (0.38f + 0.58f * SpoolCurve)
-                    + RumbleState * (0.42f + 0.30f * Spool)
-                    + ExhaustWash
-                    + Afterburner * 0.42f
-                    + Wind;
+                float Sample = Turbine * (0.22f + 0.32f * SpoolCurve)
+                    + CombustionThrob
+                    + ExhaustRoar
+                    + Afterburner * 0.34f
+                    + Wind * 0.78f;
 
                 const float CockpitCutoff = FMath::Lerp(9000.0f, 1150.0f, CockpitMix);
                 const float CockpitAlpha = 1.0f - FMath::Exp(
@@ -111,9 +130,9 @@ namespace AetherJetAudio
                 Sample *= FMath::Lerp(0.72f, 0.43f, CockpitMix);
                 Sample = FMath::Clamp(Sample, -0.96f, 0.96f);
 
-                const float StereoMotion = 0.018f * FMath::Sin(ModulationPhase * 0.47f);
-                OutAudio[Frame * 2] = FMath::Clamp(Sample - StereoMotion * ExhaustWash, -1.0f, 1.0f);
-                OutAudio[Frame * 2 + 1] = FMath::Clamp(Sample + StereoMotion * ExhaustWash, -1.0f, 1.0f);
+                const float StereoMotion = 0.014f * FMath::Sin(ModulationPhase * 0.47f);
+                OutAudio[Frame * 2] = FMath::Clamp(Sample - StereoMotion * ExhaustRoar, -1.0f, 1.0f);
+                OutAudio[Frame * 2 + 1] = FMath::Clamp(Sample + StereoMotion * ExhaustRoar, -1.0f, 1.0f);
             }
 
             if ((NumSamples & 1) != 0)
@@ -158,9 +177,11 @@ namespace AetherJetAudio
         float FanHarmonicPhase = 0.0f;
         float CompressorPhase = 0.0f;
         float CompressorHarmonicPhase = 0.0f;
+        float CombustionPhase = 0.0f;
         float ModulationPhase = 0.0f;
         float RumbleState = 0.0f;
         float ExhaustState = 0.0f;
+        float RoarBassState = 0.0f;
         float WindState = 0.0f;
         float CockpitFilterState = 0.0f;
         float CrackleEnvelope = 0.0f;
