@@ -46,6 +46,15 @@ protected:
     UHierarchicalInstancedStaticMeshComponent* BroadleafTrees;
 
     UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* CorkOakTrees;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* WindmillPalms;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* CoconutPalms;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
     UHierarchicalInstancedStaticMeshComponent* Shrubs;
 
     UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
@@ -78,11 +87,8 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Aether|Environment", meta = (ClampMin = "1"))
     int32 EnvironmentSeed = 1847;
 
-    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "5000"))
-    int32 ForestClusterBudget = 2200;
-
-    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "1", ClampMax = "120"))
-    int32 TreesPerCluster = 58;
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "120000"))
+    int32 TreeInstanceBudget = 62000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "50000"))
     int32 ShrubInstanceBudget = 22000;
@@ -99,6 +105,8 @@ private:
     UStaticMesh* LoadFirstAvailable(const TArray<FSoftObjectPath>& CandidatePaths) const;
     TArray<UStaticMesh*> LoadLargestMeshesInPaths(
         const TArray<FName>& PackagePaths, int32 MaxMeshes) const;
+    TArray<UHierarchicalInstancedStaticMeshComponent*> GetTreeComponents() const;
+    int32 GetTreeInstanceCount() const;
     TArray<UHierarchicalInstancedStaticMeshComponent*> GetRockComponents() const;
     int32 GetRockInstanceCount() const;
     bool FindLandscapeBounds(FBox2D& OutBounds) const;
