@@ -222,6 +222,18 @@ FVector AProceduralWorldDirector::GetTurbulenceForce(const FVector& WorldLocatio
         FMath::Sin(X + Y + TimeSeconds * 1.91f) * 1.55f) * Gust;
 }
 
+float AProceduralWorldDirector::GetCondensationHumidity() const
+{
+    switch (Weather)
+    {
+    case EAetherWeather::GoldenClear: return 0.34f;
+    case EAetherWeather::BrokenClouds: return 0.76f;
+    case EAetherWeather::StormFront: return 0.96f;
+    case EAetherWeather::BlueHour: return 0.64f;
+    default: return 0.68f;
+    }
+}
+
 AProceduralWorldDirector* AProceduralWorldDirector::Find(UWorld* World)
 {
     if (!World)
