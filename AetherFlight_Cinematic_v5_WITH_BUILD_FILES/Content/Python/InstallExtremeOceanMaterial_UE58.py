@@ -39,6 +39,30 @@ def set_property(obj, name: str, value, required: bool = True) -> None:
         log(f"Optional property {name} is unavailable in this engine build")
 
 
+def resolve_enum_value(enum_type, candidates, semantic_tokens):
+    """Resolve Unreal enum spellings that changed between Python API versions."""
+    for candidate in candidates:
+        value = getattr(enum_type, candidate, None)
+        if value is not None:
+            log(f"Using {enum_type.__name__}.{candidate}")
+            return value
+
+    normalized_tokens = tuple(token.upper() for token in semantic_tokens)
+    for attribute_name in dir(enum_type):
+        normalized_name = "".join(character for character in attribute_name.upper() if character.isalnum())
+        if all(token in normalized_name for token in normalized_tokens):
+            value = getattr(enum_type, attribute_name, None)
+            if value is not None:
+                log(f"Resolved UE enum spelling as {enum_type.__name__}.{attribute_name}")
+                return value
+
+    available = [name for name in dir(enum_type) if name.isupper()]
+    raise RuntimeError(
+        f"Could not find the Single Layer Water shading model in {enum_type.__name__}. "
+        f"Available enum values: {available}"
+    )
+
+
 def connect(source, target, input_names, description: str) -> None:
     if isinstance(input_names, str):
         input_names = (input_names,)
@@ -189,7 +213,18 @@ def get_or_create_material():
 
 def build_material():
     material = get_or_create_material()
-    set_property(material, "shading_model", unreal.MaterialShadingModel.MSM_SINGLELAYERWATER)
+    single_layer_water_model = resolve_enum_value(
+        unreal.MaterialShadingModel,
+        (
+            "MSM_SINGLE_LAYER_WATER",
+            "MSM_SINGLELAYER_WATER",
+            "MSM_SINGLELAYERWATER",
+            "SINGLE_LAYER_WATER",
+            "SINGLELAYERWATER",
+        ),
+        ("SINGLE", "LAYER", "WATER"),
+    )
+    set_property(material, "shading_model", single_layer_water_model)
     set_property(material, "blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     set_property(material, "two_sided", True)
     set_property(material, "tangent_space_normal", False)
