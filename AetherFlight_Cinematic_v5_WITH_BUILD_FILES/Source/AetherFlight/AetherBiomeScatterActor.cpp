@@ -357,7 +357,7 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
         const float ShrubY = Y + FMath::Sin(OffsetAngle) * OffsetDistance;
         float ShrubHeightMeters = 0.0f;
         FVector ShrubNormal = FVector::UpVector;
-        if (SampleLandscape(ShrubX, ShrubY, ShrubHeightMeters, ShrubNormal))
+        if (SampleLandscape(ShrubX, ShrubY, ShrubHeightMeters, ShrubNormal) && ShrubNormal.Z > 0.82f)
         {
             const float Scale = Random.FRandRange(0.68f, 1.48f);
             Shrubs->AddInstance(FTransform(
@@ -375,7 +375,7 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
         const float CoverY = Y + FMath::Sin(OffsetAngle) * OffsetDistance;
         float CoverHeightMeters = 0.0f;
         FVector CoverNormal = FVector::UpVector;
-        if (SampleLandscape(CoverX, CoverY, CoverHeightMeters, CoverNormal))
+        if (SampleLandscape(CoverX, CoverY, CoverHeightMeters, CoverNormal) && CoverNormal.Z > 0.86f)
         {
             const float Scale = Random.FRandRange(0.55f, 1.32f);
             GroundCover->AddInstance(FTransform(
@@ -465,8 +465,8 @@ void AAetherBiomeScatterActor::DisableLegacyScatterIfReplaced()
         for (UHierarchicalInstancedStaticMeshComponent* Component : Components)
         {
             const FName Name = Component->GetFName();
-            if ((bHasTrees && Name == TEXT("ProceduralForest"))
-                || (bHasRocks && Name == TEXT("ProceduralRocks")))
+            if ((bHasTrees && Name == FName(TEXT("ProceduralForest")))
+                || (bHasRocks && Name == FName(TEXT("ProceduralRocks"))))
             {
                 Component->ClearInstances();
                 Component->SetVisibility(false, true);
