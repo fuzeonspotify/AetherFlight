@@ -200,7 +200,6 @@ def get_or_create_material():
                 log(f"Backed up the previous ocean material to {BACKUP_PATH}")
             else:
                 log("Warning: the optional material backup could not be created")
-        unreal.MaterialEditingLibrary.delete_all_material_expressions(material)
         return material
 
     material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
@@ -212,7 +211,6 @@ def get_or_create_material():
 
 
 def build_material():
-    material = get_or_create_material()
     single_layer_water_model = resolve_enum_value(
         unreal.MaterialShadingModel,
         (
@@ -224,7 +222,18 @@ def build_material():
         ),
         ("SINGLE", "LAYER", "WATER"),
     )
-    set_property(material, "shading_model", single_layer_water_model)
+    default_lit_model = resolve_enum_value(
+        unreal.MaterialShadingModel,
+        ("MSM_DEFAULT_LIT", "DEFAULT_LIT"),
+        ("DEFAULT", "LIT"),
+    )
+    material = get_or_create_material()
+
+    # Build under Default Lit so Unreal does not try to compile an incomplete
+    # Single Layer Water graph after every expression is added. The final
+    # shading-model switch happens only after the water output is fully wired.
+    set_property(material, "shading_model", default_lit_model)
+    unreal.MaterialEditingLibrary.delete_all_material_expressions(material)
     set_property(material, "blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     set_property(material, "two_sided", True)
     set_property(material, "tangent_space_normal", False)
@@ -318,6 +327,7 @@ def build_material():
     connect(phase_g, single_layer, "PhaseG", "water phase anisotropy")
     connect(behind, single_layer, "ColorScaleBehindWater", "underwater scene color scale")
 
+    set_property(material, "shading_model", single_layer_water_model)
     unreal.MaterialEditingLibrary.layout_material_expressions(material)
     unreal.MaterialEditingLibrary.recompile_material(material)
     if not unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False):
