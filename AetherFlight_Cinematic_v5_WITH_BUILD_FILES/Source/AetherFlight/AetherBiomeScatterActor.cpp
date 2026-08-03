@@ -585,7 +585,7 @@ bool AAetherBiomeScatterActor::IsInsideGeneratedWater(const float X, const float
             const double T = FMath::Clamp(
                 FVector2D::DotProduct(FVector2D(X, Y) - Start, Segment)
                     / SegmentLengthSquared,
-                0.0f, 1.0f);
+                0.0, 1.0);
             const float Distance = (FVector2D(X, Y) - (Start + Segment * T)).Size();
             if (Distance < AetherEnvironment::RiverWidthsCm[RiverIndex] * 1.4f)
             {
@@ -622,7 +622,7 @@ float AAetherBiomeScatterActor::HydrologyMoisture(const float X, const float Y) 
             const double T = FMath::Clamp(
                 FVector2D::DotProduct(FVector2D(X, Y) - Start, Segment)
                     / SegmentLengthSquared,
-                0.0f, 1.0f);
+                0.0, 1.0);
             const float Distance = (FVector2D(X, Y) - (Start + Segment * T)).Size();
             const float Reach = AetherEnvironment::RiverWidthsCm[RiverIndex] * 8.0f;
             Moisture = FMath::Max(Moisture, 1.0f - AetherEnvironment::SmoothRange(
