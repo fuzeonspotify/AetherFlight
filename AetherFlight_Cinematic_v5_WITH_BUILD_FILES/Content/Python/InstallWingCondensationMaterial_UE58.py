@@ -7,8 +7,8 @@ ASSET_DIR = "/Game/Aether/Effects"
 ASSET_NAME = "M_WingCondensation"
 ASSET_PATH = f"{ASSET_DIR}/{ASSET_NAME}"
 BACKUP_DIR = f"{ASSET_DIR}/Backups"
-BACKUP_PATH = f"{BACKUP_DIR}/{ASSET_NAME}_RGBRibbonBackup"
-LOG = "[Aether Vapor Material v2]"
+BACKUP_PATH = f"{BACKUP_DIR}/{ASSET_NAME}_PlanarRibbonBackup"
+LOG = "[Aether Vapor Material v3]"
 
 
 def log(message):
@@ -114,7 +114,7 @@ def build_material():
     material = unreal.EditorAssetLibrary.load_asset(ASSET_PATH)
     if material and not unreal.EditorAssetLibrary.does_asset_exist(BACKUP_PATH):
         if unreal.EditorAssetLibrary.duplicate_asset(ASSET_PATH, BACKUP_PATH):
-            log(f"Backed up the old RGB-ribbon material to {BACKUP_PATH}")
+            log(f"Backed up the old planar-ribbon material to {BACKUP_PATH}")
 
     # Recreate the generated asset instead of editing it in place. In UE 5.8,
     # delete_all_material_expressions can leave editor-only custom outputs
@@ -194,18 +194,18 @@ def build_material():
     connect(soft_edge, shaped_alpha, ("B", "Input2"), "soft vertex density")
     moving_alpha = multiply(material, shaped_alpha, density_noise, 350, 260, "animated density")
     depth_fade = expression(material, unreal.MaterialExpressionDepthFade, 120, 560)
-    depth_fade.set_editor_property("fade_distance_default", 165.0)
+    depth_fade.set_editor_property("fade_distance_default", 260.0)
     depth_fade.set_editor_property("opacity_default", 1.0)
     faded_alpha = multiply(material, moving_alpha, depth_fade, 560, 300, "depth-softened density")
     final_alpha = multiply(
-        material, faded_alpha, scalar(material, 0.94, 350, 450),
+        material, faded_alpha, scalar(material, 0.58, 350, 450),
         770, 300, "final condensation opacity"
     )
 
-    vapor_color = color(material, (0.78, 0.88, 0.94), 520, -120)
+    vapor_color = color(material, (0.72, 0.79, 0.83), 520, -120)
     output(material, vapor_color, unreal.MaterialProperty.MP_BASE_COLOR, "neutral vapor base color")
     emissive = multiply(
-        material, vapor_color, scalar(material, 0.025, 520, 15),
+        material, vapor_color, scalar(material, 0.008, 520, 15),
         760, -60, "subtle vapor emissive"
     )
     output(material, emissive, unreal.MaterialProperty.MP_EMISSIVE_COLOR, "subtle vapor emissive output")
@@ -217,14 +217,14 @@ def build_material():
     unreal.MaterialEditingLibrary.recompile_material(material)
     if not unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False):
         raise RuntimeError(f"Could not save {ASSET_PATH}")
-    log("Installed neutral, lit, soft-edged aerodynamic vapor material")
+    log("Installed restrained, lit, depth-softened aerodynamic vapor material")
 
 
 def main():
     build_material()
     unreal.EditorDialog.show_message(
-        "Aether Aerodynamic Vapor v2",
-        "The RGB ribbon material was replaced with soft, lit condensation.\n\n"
+        "Aether Aerodynamic Vapor v3",
+        "The planar ribbon material was replaced with restrained, lit condensation.\n\n"
         "Wait for shaders, Save All, rebuild the C++ module, then pull a hard turn "
         "above 185 knots in humid weather.",
         unreal.AppMsgType.OK,
