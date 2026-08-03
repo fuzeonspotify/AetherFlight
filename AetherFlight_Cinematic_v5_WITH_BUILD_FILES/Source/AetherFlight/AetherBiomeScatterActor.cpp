@@ -31,9 +31,47 @@ namespace AetherEnvironment
         Alpine,
         Boreal,
         AspenValley,
+        Riparian,
         DryWoodland,
         Coastal
     };
+
+    struct FLakeDefinition
+    {
+        FVector2D Center;
+        FVector2D Radius;
+    };
+
+    constexpr FLakeDefinition Lakes[] = {
+        {FVector2D(-0.33, 0.43), FVector2D(0.095, 0.063)},
+        {FVector2D(0.29, 0.48), FVector2D(0.070, 0.050)},
+        {FVector2D(-0.03, 0.55), FVector2D(0.062, 0.046)},
+        {FVector2D(0.12, -0.10), FVector2D(0.052, 0.038)}
+    };
+
+    const TArray<TArray<FVector2D>> RiverPaths = {
+        {FVector2D(-0.34, 0.46), FVector2D(-0.25, 0.39), FVector2D(-0.31, 0.27),
+         FVector2D(-0.17, 0.18), FVector2D(-0.22, 0.05), FVector2D(-0.04, -0.02),
+         FVector2D(-0.10, -0.16), FVector2D(0.12, -0.21), FVector2D(0.20, -0.34),
+         FVector2D(0.38, -0.31), FVector2D(0.52, -0.44), FVector2D(0.70, -0.39),
+         FVector2D(0.83, -0.49), FVector2D(0.96, -0.46)},
+        {FVector2D(0.30, 0.51), FVector2D(0.41, 0.45), FVector2D(0.36, 0.34),
+         FVector2D(0.50, 0.29), FVector2D(0.44, 0.20), FVector2D(0.61, 0.16),
+         FVector2D(0.56, 0.08), FVector2D(0.72, 0.05), FVector2D(0.80, 0.10),
+         FVector2D(0.96, 0.01)},
+        {FVector2D(-0.03, 0.57), FVector2D(-0.11, 0.51), FVector2D(-0.08, 0.42),
+         FVector2D(-0.24, 0.38), FVector2D(-0.20, 0.27), FVector2D(-0.40, 0.22),
+         FVector2D(-0.36, 0.12), FVector2D(-0.55, 0.08), FVector2D(-0.59, -0.03),
+         FVector2D(-0.76, 0.01), FVector2D(-0.91, -0.10)}
+    };
+
+    constexpr float RiverWidthsCm[] = {15500.0f, 11800.0f, 10500.0f};
+
+    float SmoothRange(const float Edge0, const float Edge1, const float Value)
+    {
+        const float T = FMath::Clamp((Value - Edge0) / FMath::Max(Edge1 - Edge0, 1.e-4f), 0.0f, 1.0f);
+        return T * T * (3.0f - 2.0f * T);
+    }
 }
 
 AAetherBiomeScatterActor::AAetherBiomeScatterActor()
@@ -459,7 +497,8 @@ bool AAetherBiomeScatterActor::FindLandscapeBounds(FBox2D& OutBounds) const
     bool bFound = false;
     for (TActorIterator<ALandscapeProxy> It(GetWorld()); It; ++It)
     {
-        if (!IsValid(*It) || It->IsActorBeingDestroyed() || It->IsHidden())
+        if (!IsValid(*It) || It->IsActorBeingDestroyed() || It->IsHidden()
+            || It->ActorHasTag(FName(TEXT("AetherLegacyLandscape"))))
         {
             continue;
         }
@@ -518,6 +557,81 @@ bool AAetherBiomeScatterActor::IsInsideRunwayClearance(const float X, const floa
     return FMath::Abs(X - AirbaseX) < 175000.0f && FMath::Abs(Y - AirbaseY) < 30000.0f;
 }
 
+bool AAetherBiomeScatterActor::IsInsideGeneratedWater(const float X, const float Y) const
+{
+    const float HalfWorldCm = AetherEnvironment::DefaultHalfWorldCm;
+    const FVector2D Normalized(X / HalfWorldCm, Y / HalfWorldCm);
+    for (const AetherEnvironment::FLakeDefinition& Lake : AetherEnvironment::Lakes)
+    {
+        const FVector2D Delta = Normalized - Lake.Center;
+        const float Radius = FMath::Sqrt(
+            FMath::Square(Delta.X / Lake.Radius.X)
+            + FMath::Square(Delta.Y / Lake.Radius.Y));
+        if (Radius < 1.04f)
+        {
+            return true;
+        }
+    }
+
+    for (int32 RiverIndex = 0; RiverIndex < AetherEnvironment::RiverPaths.Num(); ++RiverIndex)
+    {
+        const TArray<FVector2D>& Path = AetherEnvironment::RiverPaths[RiverIndex];
+        for (int32 PointIndex = 0; PointIndex + 1 < Path.Num(); ++PointIndex)
+        {
+            const FVector2D Start = Path[PointIndex] * HalfWorldCm;
+            const FVector2D End = Path[PointIndex + 1] * HalfWorldCm;
+            const FVector2D Segment = End - Start;
+            const double SegmentLengthSquared = FMath::Max(Segment.SizeSquared(), 1.0);
+            const double T = FMath::Clamp(
+                FVector2D::DotProduct(FVector2D(X, Y) - Start, Segment)
+                    / SegmentLengthSquared,
+                0.0f, 1.0f);
+            const float Distance = (FVector2D(X, Y) - (Start + Segment * T)).Size();
+            if (Distance < AetherEnvironment::RiverWidthsCm[RiverIndex] * 1.4f)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+float AAetherBiomeScatterActor::HydrologyMoisture(const float X, const float Y) const
+{
+    const float HalfWorldCm = AetherEnvironment::DefaultHalfWorldCm;
+    const FVector2D Normalized(X / HalfWorldCm, Y / HalfWorldCm);
+    float Moisture = 0.0f;
+    for (const AetherEnvironment::FLakeDefinition& Lake : AetherEnvironment::Lakes)
+    {
+        const FVector2D Delta = Normalized - Lake.Center;
+        const float Radius = FMath::Sqrt(
+            FMath::Square(Delta.X / Lake.Radius.X)
+            + FMath::Square(Delta.Y / Lake.Radius.Y));
+        Moisture = FMath::Max(Moisture, 1.0f - AetherEnvironment::SmoothRange(1.0f, 3.1f, Radius));
+    }
+
+    for (int32 RiverIndex = 0; RiverIndex < AetherEnvironment::RiverPaths.Num(); ++RiverIndex)
+    {
+        const TArray<FVector2D>& Path = AetherEnvironment::RiverPaths[RiverIndex];
+        for (int32 PointIndex = 0; PointIndex + 1 < Path.Num(); ++PointIndex)
+        {
+            const FVector2D Start = Path[PointIndex] * HalfWorldCm;
+            const FVector2D End = Path[PointIndex + 1] * HalfWorldCm;
+            const FVector2D Segment = End - Start;
+            const double SegmentLengthSquared = FMath::Max(Segment.SizeSquared(), 1.0);
+            const double T = FMath::Clamp(
+                FVector2D::DotProduct(FVector2D(X, Y) - Start, Segment)
+                    / SegmentLengthSquared,
+                0.0f, 1.0f);
+            const float Distance = (FVector2D(X, Y) - (Start + Segment * T)).Size();
+            const float Reach = AetherEnvironment::RiverWidthsCm[RiverIndex] * 8.0f;
+            Moisture = FMath::Max(Moisture, 1.0f - AetherEnvironment::SmoothRange(
+                AetherEnvironment::RiverWidthsCm[RiverIndex] * 1.4f, Reach, Distance));
+        }
+    }
+    return FMath::Clamp(Moisture, 0.0f, 1.0f);
+}
+
 bool AAetherBiomeScatterActor::ReserveCell(
     TSet<uint64>& OccupiedCells, const float X, const float Y, const float CellSize) const
 {
@@ -573,10 +687,12 @@ void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStrea
         const float MacroBiome = ValueNoise(X * 0.00000125f + 17.0f, Y * 0.00000125f - 53.0f);
         const float ForestDetail = ValueNoise(X * 0.0000058f - 81.0f, Y * 0.0000058f + 29.0f);
         const float MoistureField = ValueNoise(X * 0.0000031f + 91.0f, Y * 0.0000031f - 44.0f);
+        const float WaterMoisture = HydrologyMoisture(X, Y);
         const float ClearingField = ValueNoise(X * 0.0000024f - 31.0f, Y * 0.0000024f + 72.0f);
 
         float Density = FMath::Clamp(
-            0.12f + MacroBiome * 0.26f + ForestDetail * 0.24f + MoistureField * 0.20f,
+            0.10f + MacroBiome * 0.24f + ForestDetail * 0.22f
+                + MoistureField * 0.17f + WaterMoisture * 0.24f,
             0.10f, 0.78f);
         if (ClearingField < 0.18f)
         {
@@ -610,7 +726,14 @@ bool AAetherBiomeScatterActor::TryAddTree(
     }
 
     const float Slope = 1.0f - FMath::Clamp(Normal.Z, 0.0f, 1.0f);
-    const float Moisture = ValueNoise(X * 0.0000046f + 91.0f, Y * 0.0000046f - 44.0f);
+    if (IsInsideGeneratedWater(X, Y))
+    {
+        return false;
+    }
+    const float Hydrology = HydrologyMoisture(X, Y);
+    const float Moisture = FMath::Max(
+        ValueNoise(X * 0.0000046f + 91.0f, Y * 0.0000046f - 44.0f),
+        Hydrology * 0.94f);
     const float Exposure = ValueNoise(X * 0.0000097f - 15.0f, Y * 0.0000097f + 63.0f);
     const float MacroBiome = ValueNoise(X * 0.00000125f + 17.0f, Y * 0.00000125f - 53.0f);
     const float Warmth = FMath::Clamp(
@@ -625,6 +748,10 @@ bool AAetherBiomeScatterActor::TryAddTree(
     if (HeightMeters > 1250.0f || Warmth < 0.34f)
     {
         Biome = AetherEnvironment::EBiomeType::Alpine;
+    }
+    else if (Hydrology > 0.48f && HeightMeters < 980.0f)
+    {
+        Biome = AetherEnvironment::EBiomeType::Riparian;
     }
     else if (HeightMeters < 560.0f && Warmth > 0.61f && MacroBiome > 0.46f)
     {
@@ -650,6 +777,11 @@ bool AAetherBiomeScatterActor::TryAddTree(
         Target = SpeciesRoll < 0.58f
             ? BroadleafTrees
             : (SpeciesRoll < 0.83f ? ConiferSecondary : CorkOakTrees);
+        break;
+    case AetherEnvironment::EBiomeType::Riparian:
+        Target = SpeciesRoll < 0.54f
+            ? BroadleafTrees
+            : (SpeciesRoll < 0.79f ? CorkOakTrees : ConiferSecondary);
         break;
     case AetherEnvironment::EBiomeType::DryWoodland:
         Target = SpeciesRoll < 0.58f
@@ -704,6 +836,11 @@ bool AAetherBiomeScatterActor::TryAddTree(
         MinScale = 0.68f;
         MaxScale = 1.22f;
     }
+    else if (Biome == AetherEnvironment::EBiomeType::Riparian)
+    {
+        MinScale = 0.82f;
+        MaxScale = 1.52f;
+    }
 
     const float UniformScale = Random.FRandRange(MinScale, MaxScale);
     float WidthScale = UniformScale * Random.FRandRange(0.84f, 1.14f);
@@ -738,7 +875,9 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
         const float ShrubY = Y + FMath::Sin(OffsetAngle) * OffsetDistance;
         float ShrubHeightMeters = 0.0f;
         FVector ShrubNormal = FVector::UpVector;
-        if (SampleLandscape(ShrubX, ShrubY, ShrubHeightMeters, ShrubNormal) && ShrubNormal.Z > 0.82f)
+        if (!IsInsideGeneratedWater(ShrubX, ShrubY)
+            && SampleLandscape(ShrubX, ShrubY, ShrubHeightMeters, ShrubNormal)
+            && ShrubNormal.Z > 0.82f)
         {
             const float Scale = Random.FRandRange(0.68f, 1.48f);
             Shrubs->AddInstance(FTransform(
@@ -756,7 +895,9 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
         const float CoverY = Y + FMath::Sin(OffsetAngle) * OffsetDistance;
         float CoverHeightMeters = 0.0f;
         FVector CoverNormal = FVector::UpVector;
-        if (SampleLandscape(CoverX, CoverY, CoverHeightMeters, CoverNormal) && CoverNormal.Z > 0.86f)
+        if (!IsInsideGeneratedWater(CoverX, CoverY)
+            && SampleLandscape(CoverX, CoverY, CoverHeightMeters, CoverNormal)
+            && CoverNormal.Z > 0.86f)
         {
             const float Scale = Random.FRandRange(0.55f, 1.32f);
             GroundCover->AddInstance(FTransform(
@@ -800,7 +941,8 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
     auto TryPlaceRock = [&](const float X, const float Y, const float MinScale,
                             const float MaxScale, const bool bFormationRock) -> bool
     {
-        if (RockCount >= LocalTargetCount || IsInsideRunwayClearance(X, Y))
+        if (RockCount >= LocalTargetCount || IsInsideRunwayClearance(X, Y)
+            || IsInsideGeneratedWater(X, Y) || HydrologyMoisture(X, Y) > 0.86f)
         {
             return false;
         }
