@@ -19,6 +19,10 @@ StagedBuilds/
 # Per-developer Unreal content
 Content/Developers/
 
+# Locally downloaded full-quality CC0 audio sources. The Unreal installer imports
+# these into Sound Wave assets, while source recordings remain outside Git.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/AudioSource/Jet/
+
 # Visual Studio / Rider / VS Code generated state
 .vs/
 .idea/
