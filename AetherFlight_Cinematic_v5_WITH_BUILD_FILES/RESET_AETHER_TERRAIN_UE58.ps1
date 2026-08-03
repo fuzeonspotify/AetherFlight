@@ -13,12 +13,13 @@ $UProject = Join-Path $ProjectRoot "AetherFlight.uproject"
 $BuildLog = Join-Path $ProjectRoot "Build_AetherFlight.log"
 $PythonRoot = Join-Path $ProjectRoot "Content\Python"
 $ResetScript = Join-Path $PythonRoot "ResetAetherTerrain_UE58.py"
-$InstallScript = Join-Path $PythonRoot "InstallAetherMeshTerrainClean_UE58.py"
+$ResetReport = Join-Path $ProjectRoot "Saved\AetherTerrainReset.txt"
+$RecoveryScript = Join-Path $ProjectRoot "RECOVER_AETHER_MESH_TERRAIN_INSTALL_UE58.ps1"
 $EngineBuild = Join-Path $EngineRoot "Engine\Build\BatchFiles\Build.bat"
 $UnrealEditorCmd = Join-Path $EngineRoot "Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
 $UnrealEditor = Join-Path $EngineRoot "Engine\Binaries\Win64\UnrealEditor.exe"
 
-foreach ($Path in @($UProject, $ResetScript, $InstallScript, $EngineBuild, $UnrealEditorCmd)) {
+foreach ($Path in @($UProject, $ResetScript, $RecoveryScript, $EngineBuild, $UnrealEditorCmd)) {
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "Required file was not found: $Path"
     }
@@ -71,8 +72,21 @@ if (-not $SkipBuild) {
     }
 }
 
+if (Test-Path -LiteralPath $ResetReport) {
+    Remove-Item -LiteralPath $ResetReport -Force
+}
 Invoke-UnrealPython -ScriptPath $ResetScript -StepName "Deleting every existing Landscape and Mesh Terrain actor"
-Invoke-UnrealPython -ScriptPath $InstallScript -StepName "Installing the clean Mesh Terrain material, MPD, pipelines, and masks"
+if (-not (Test-Path -LiteralPath $ResetReport)) {
+    throw "Terrain reset did not complete. Check Saved\Logs\AetherFlight.log for LogPython errors."
+}
+
+# Regenerate every source texture/weightmap and install the clean authoring assets.
+# The recovery script also uses a success report because UnrealEditor-Cmd can return
+# exit code 0 even when an executed Python script raises an exception.
+& $RecoveryScript -EngineRoot $EngineRoot -DoNotOpenEditor
+if ($LASTEXITCODE -ne 0) {
+    throw "Clean Mesh Terrain authoring-asset installation failed."
+}
 
 Write-Host ""
 Write-Host "Terrain reset and clean authoring-asset install completed." -ForegroundColor Green
