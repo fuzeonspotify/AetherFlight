@@ -42,7 +42,7 @@ namespace AetherEnvironment
         FVector2D Radius;
     };
 
-    constexpr FLakeDefinition Lakes[] = {
+    const FLakeDefinition Lakes[] = {
         {FVector2D(-0.33, 0.43), FVector2D(0.095, 0.063)},
         {FVector2D(0.29, 0.48), FVector2D(0.070, 0.050)},
         {FVector2D(-0.03, 0.55), FVector2D(0.062, 0.046)},
