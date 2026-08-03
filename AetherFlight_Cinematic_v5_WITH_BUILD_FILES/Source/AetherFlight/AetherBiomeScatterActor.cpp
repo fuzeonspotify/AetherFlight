@@ -18,8 +18,8 @@ namespace AetherEnvironment
     constexpr float TraceBottomCm = -300000.0f;
     constexpr float DefaultHalfWorldCm = 2400000.0f;
     constexpr float LandscapeBorderCm = 12000.0f;
-    constexpr float TreeCellSizeCm = 1500.0f;
-    constexpr float RockCellSizeCm = 2600.0f;
+    constexpr float TreeCellSizeCm = 850.0f;
+    constexpr float RockCellSizeCm = 1800.0f;
     constexpr float InitialBuildDelaySeconds = 2.0f;
     constexpr float RetryBuildDelaySeconds = 2.0f;
     constexpr int32 MaxBuildAttempts = 6;
@@ -40,6 +40,11 @@ AAetherBiomeScatterActor::AAetherBiomeScatterActor()
     GroundCover = CreateScatterComponent(TEXT("GroundCover"), 90000, 350000);
     BoulderPrimary = CreateScatterComponent(TEXT("BoulderPrimary"), 1200000, 4200000);
     BoulderSecondary = CreateScatterComponent(TEXT("BoulderSecondary"), 1400000, 4800000);
+    BoulderVariant3 = CreateScatterComponent(TEXT("BoulderVariant3"), 1200000, 4200000);
+    BoulderVariant4 = CreateScatterComponent(TEXT("BoulderVariant4"), 1200000, 4200000);
+    BoulderVariant5 = CreateScatterComponent(TEXT("BoulderVariant5"), 1200000, 4200000);
+    BoulderVariant6 = CreateScatterComponent(TEXT("BoulderVariant6"), 1200000, 4200000);
+    BoulderVariant7 = CreateScatterComponent(TEXT("BoulderVariant7"), 1200000, 4200000);
 }
 
 void AAetherBiomeScatterActor::BeginPlay()
@@ -74,6 +79,29 @@ UHierarchicalInstancedStaticMeshComponent* AAetherBiomeScatterActor::CreateScatt
     return Component;
 }
 
+TArray<UHierarchicalInstancedStaticMeshComponent*> AAetherBiomeScatterActor::GetRockComponents() const
+{
+    return {
+        BoulderPrimary,
+        BoulderSecondary,
+        BoulderVariant3,
+        BoulderVariant4,
+        BoulderVariant5,
+        BoulderVariant6,
+        BoulderVariant7
+    };
+}
+
+int32 AAetherBiomeScatterActor::GetRockInstanceCount() const
+{
+    int32 Count = 0;
+    for (const UHierarchicalInstancedStaticMeshComponent* RockComponent : GetRockComponents())
+    {
+        Count += RockComponent->GetInstanceCount();
+    }
+    return Count;
+}
+
 void AAetherBiomeScatterActor::ClearEnvironment()
 {
     GetWorldTimerManager().ClearTimer(ScatterBuildTimer);
@@ -82,8 +110,10 @@ void AAetherBiomeScatterActor::ClearEnvironment()
     BroadleafTrees->ClearInstances();
     Shrubs->ClearInstances();
     GroundCover->ClearInstances();
-    BoulderPrimary->ClearInstances();
-    BoulderSecondary->ClearInstances();
+    for (UHierarchicalInstancedStaticMeshComponent* RockComponent : GetRockComponents())
+    {
+        RockComponent->ClearInstances();
+    }
     BuildAttempt = 0;
     bBuilt = false;
 }
@@ -194,15 +224,26 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         FName(TEXT("/Game/Rock_05")),
         FName(TEXT("/Game/Rock_06")),
         FName(TEXT("/Game/Rock_07"))
-    }, 2);
+    }, 7);
 
     ConiferA = ConiferA ? ConiferA : (PineMeshes.Num() > 0 ? PineMeshes[0] : nullptr);
     ConiferB = ConiferB ? ConiferB : (PineMeshes.Num() > 1 ? PineMeshes[1] : nullptr);
     Broadleaf = Broadleaf ? Broadleaf : (AspenMeshes.Num() > 0 ? AspenMeshes[0] : nullptr);
-    BoulderA = BoulderA ? BoulderA : (RockMeshes.Num() > 0 ? RockMeshes[0] : nullptr);
-    BoulderB = BoulderB ? BoulderB : (RockMeshes.Num() > 1 ? RockMeshes[1] : nullptr);
+    TArray<UStaticMesh*> SelectedRockMeshes;
+    if (BoulderA)
+    {
+        SelectedRockMeshes.AddUnique(BoulderA);
+    }
+    if (BoulderB)
+    {
+        SelectedRockMeshes.AddUnique(BoulderB);
+    }
+    for (UStaticMesh* RockMesh : RockMeshes)
+    {
+        SelectedRockMeshes.AddUnique(RockMesh);
+    }
 
-    if (!ConiferA && !ConiferB && !Broadleaf && !Shrub && !Cover && !BoulderA && !BoulderB)
+    if (!ConiferA && !ConiferB && !Broadleaf && !Shrub && !Cover && SelectedRockMeshes.Num() == 0)
     {
         bBuilt = true;
         UE_LOG(LogTemp, Warning,
@@ -211,14 +252,17 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     }
 
     ConiferB = ConiferB ? ConiferB : ConiferA;
-    BoulderB = BoulderB ? BoulderB : BoulderA;
     ConiferPrimary->SetStaticMesh(ConiferA);
     ConiferSecondary->SetStaticMesh(ConiferB);
     BroadleafTrees->SetStaticMesh(Broadleaf);
     Shrubs->SetStaticMesh(Shrub);
     GroundCover->SetStaticMesh(Cover);
-    BoulderPrimary->SetStaticMesh(BoulderA);
-    BoulderSecondary->SetStaticMesh(BoulderB);
+    const TArray<UHierarchicalInstancedStaticMeshComponent*> RockComponents = GetRockComponents();
+    for (int32 Index = 0; Index < RockComponents.Num(); ++Index)
+    {
+        RockComponents[Index]->SetStaticMesh(
+            SelectedRockMeshes.IsValidIndex(Index) ? SelectedRockMeshes[Index] : nullptr);
+    }
 
     FBox2D Bounds;
     if (!FindLandscapeBounds(Bounds))
@@ -238,7 +282,7 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     const int32 TreeCount = ConiferPrimary->GetInstanceCount()
         + ConiferSecondary->GetInstanceCount() + BroadleafTrees->GetInstanceCount();
     const int32 UnderstoryCount = Shrubs->GetInstanceCount() + GroundCover->GetInstanceCount();
-    const int32 RockCount = BoulderPrimary->GetInstanceCount() + BoulderSecondary->GetInstanceCount();
+    const int32 RockCount = GetRockInstanceCount();
     if (TreeCount == 0 && RockCount == 0 && BuildAttempt < AetherEnvironment::MaxBuildAttempts)
     {
         UE_LOG(LogTemp, Display,
@@ -340,7 +384,7 @@ void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStrea
     }
 
     TSet<uint64> OccupiedTreeCells;
-    const int32 ClusterAttempts = ForestClusterBudget * 3;
+    const int32 ClusterAttempts = ForestClusterBudget * 4;
     int32 AcceptedClusters = 0;
     for (int32 Attempt = 0; Attempt < ClusterAttempts && AcceptedClusters < ForestClusterBudget; ++Attempt)
     {
@@ -353,7 +397,7 @@ void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStrea
 
         const float ForestSignal = ValueNoise(CenterX * 0.0000043f + 17.0f, CenterY * 0.0000043f - 53.0f);
         const float MoistureSignal = ValueNoise(CenterX * 0.0000021f - 81.0f, CenterY * 0.0000021f + 29.0f);
-        if (ForestSignal < 0.46f || MoistureSignal < 0.34f)
+        if (ForestSignal < 0.36f || MoistureSignal < 0.27f)
         {
             continue;
         }
@@ -396,8 +440,8 @@ bool AAetherBiomeScatterActor::TryAddTree(
     const float Slope = 1.0f - FMath::Clamp(Normal.Z, 0.0f, 1.0f);
     const float Moisture = ValueNoise(X * 0.0000061f + 91.0f, Y * 0.0000061f - 44.0f);
     const float Exposure = ValueNoise(X * 0.0000117f - 15.0f, Y * 0.0000117f + 63.0f);
-    if (HeightMeters < 22.0f || HeightMeters > 1420.0f || Slope > 0.22f
-        || Moisture < 0.31f || Exposure < 0.27f)
+    if (HeightMeters < 16.0f || HeightMeters > 1850.0f || Slope > 0.31f
+        || Moisture < 0.24f || Exposure < 0.19f)
     {
         return false;
     }
@@ -481,13 +525,21 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
 
 void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream& Random)
 {
-    if (!BoulderPrimary->GetStaticMesh() && !BoulderSecondary->GetStaticMesh())
+    TArray<UHierarchicalInstancedStaticMeshComponent*> AvailableRockComponents;
+    for (UHierarchicalInstancedStaticMeshComponent* RockComponent : GetRockComponents())
+    {
+        if (RockComponent->GetStaticMesh())
+        {
+            AvailableRockComponents.Add(RockComponent);
+        }
+    }
+    if (AvailableRockComponents.Num() == 0)
     {
         return;
     }
 
     TSet<uint64> OccupiedRockCells;
-    const int32 Attempts = RockInstanceBudget * 9;
+    const int32 Attempts = RockInstanceBudget * 12;
     int32 RockCount = 0;
     for (int32 Attempt = 0; Attempt < Attempts && RockCount < RockInstanceBudget; ++Attempt)
     {
@@ -515,16 +567,8 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
             continue;
         }
 
-        UHierarchicalInstancedStaticMeshComponent* Target =
-            (Slope > 0.16f && BoulderSecondary->GetStaticMesh()) ? BoulderSecondary : BoulderPrimary;
-        if (!Target || !Target->GetStaticMesh())
-        {
-            Target = BoulderSecondary;
-        }
-        if (!Target || !Target->GetStaticMesh())
-        {
-            continue;
-        }
+        UHierarchicalInstancedStaticMeshComponent* Target = AvailableRockComponents[
+            Random.RandRange(0, AvailableRockComponents.Num() - 1)];
 
         FRotator Rotation = FRotationMatrix::MakeFromZ(Normal).Rotator();
         Rotation.Yaw += Random.FRandRange(-180.0f, 180.0f);
@@ -542,7 +586,7 @@ void AAetherBiomeScatterActor::DisableLegacyScatterIfReplaced()
 {
     const bool bHasTrees = ConiferPrimary->GetInstanceCount() + ConiferSecondary->GetInstanceCount()
         + BroadleafTrees->GetInstanceCount() > 0;
-    const bool bHasRocks = BoulderPrimary->GetInstanceCount() + BoulderSecondary->GetInstanceCount() > 0;
+    const bool bHasRocks = GetRockInstanceCount() > 0;
     if (!bHasTrees && !bHasRocks)
     {
         return;
