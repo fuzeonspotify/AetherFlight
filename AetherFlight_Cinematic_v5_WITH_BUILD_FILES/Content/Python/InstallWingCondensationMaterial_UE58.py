@@ -32,7 +32,9 @@ def connect(source, target, input_names, description, source_output=""):
             result = unreal.MaterialEditingLibrary.connect_material_expressions(
                 source, source_output, target, input_name
             )
-            if result is not False:
+            # UE returns a real bool here. Treat None as failure as well; the
+            # previous check accepted rejected pins and saved a fallback graph.
+            if result:
                 return
         except Exception:
             pass
@@ -43,7 +45,7 @@ def output(material, source, material_property, description, source_output=""):
     result = unreal.MaterialEditingLibrary.connect_material_property(
         source, source_output, material_property
     )
-    if result is False:
+    if not result:
         raise RuntimeError(f"Could not connect {description}")
 
 
@@ -113,10 +115,16 @@ def build_material():
     if material and not unreal.EditorAssetLibrary.does_asset_exist(BACKUP_PATH):
         if unreal.EditorAssetLibrary.duplicate_asset(ASSET_PATH, BACKUP_PATH):
             log(f"Backed up the old RGB-ribbon material to {BACKUP_PATH}")
-    if not material:
-        material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-            ASSET_NAME, ASSET_DIR, unreal.Material, unreal.MaterialFactoryNew()
-        )
+
+    # Recreate the generated asset instead of editing it in place. In UE 5.8,
+    # delete_all_material_expressions can leave editor-only custom outputs
+    # behind, which makes later rebuilds contain duplicate output nodes.
+    if material:
+        if not unreal.EditorAssetLibrary.delete_asset(ASSET_PATH):
+            raise RuntimeError(f"Could not replace broken generated asset {ASSET_PATH}")
+    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        ASSET_NAME, ASSET_DIR, unreal.Material, unreal.MaterialFactoryNew()
+    )
     if not material:
         raise RuntimeError(f"Could not create {ASSET_PATH}")
 
@@ -134,10 +142,6 @@ def build_material():
     unreal.MaterialEditingLibrary.delete_all_material_expressions(material)
 
     vertex_color = expression(material, unreal.MaterialExpressionVertexColor, -1500, -50)
-    vertex_alpha = component_mask(
-        material, vertex_color, "A", -1300, 120,
-        "vertex alpha only"
-    )
     texcoord = expression(material, unreal.MaterialExpressionTextureCoordinate, -1500, 330)
     tex_v = component_mask(material, texcoord, "G", -1300, 330, "vapor cross-section V")
 
@@ -182,7 +186,12 @@ def build_material():
         -300, 700, "positive density range"
     )
 
-    shaped_alpha = multiply(material, vertex_alpha, soft_edge, 140, 230, "soft vertex density")
+    # VertexColor's unnamed output is RGB (float3). Masking A from that output
+    # caused the observed "not enough components" compiler error. Connect the
+    # dedicated A output directly to the density multiply instead.
+    shaped_alpha = expression(material, unreal.MaterialExpressionMultiply, 140, 230)
+    connect(vertex_color, shaped_alpha, ("A", "Input1"), "vertex alpha density", "A")
+    connect(soft_edge, shaped_alpha, ("B", "Input2"), "soft vertex density")
     moving_alpha = multiply(material, shaped_alpha, density_noise, 350, 260, "animated density")
     depth_fade = expression(material, unreal.MaterialExpressionDepthFade, 120, 560)
     depth_fade.set_editor_property("fade_distance_default", 165.0)
