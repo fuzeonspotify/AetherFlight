@@ -20,6 +20,9 @@ namespace AetherEnvironment
     constexpr float LandscapeBorderCm = 12000.0f;
     constexpr float TreeCellSizeCm = 1500.0f;
     constexpr float RockCellSizeCm = 2600.0f;
+    constexpr float InitialBuildDelaySeconds = 2.0f;
+    constexpr float RetryBuildDelaySeconds = 2.0f;
+    constexpr int32 MaxBuildAttempts = 6;
 }
 
 AAetherBiomeScatterActor::AAetherBiomeScatterActor()
@@ -44,8 +47,14 @@ void AAetherBiomeScatterActor::BeginPlay()
     Super::BeginPlay();
     if (bEnableRuntimeScatter)
     {
-        // Allow World Partition and Landscape collision one frame to settle.
-        GetWorldTimerManager().SetTimerForNextTick(this, &AAetherBiomeScatterActor::BuildEnvironment);
+        // World Partition needs more than one frame to stream Landscape collision.
+        BuildAttempt = 0;
+        GetWorldTimerManager().SetTimer(
+            ScatterBuildTimer,
+            this,
+            &AAetherBiomeScatterActor::BuildEnvironment,
+            AetherEnvironment::InitialBuildDelaySeconds,
+            false);
     }
 }
 
@@ -67,6 +76,7 @@ UHierarchicalInstancedStaticMeshComponent* AAetherBiomeScatterActor::CreateScatt
 
 void AAetherBiomeScatterActor::ClearEnvironment()
 {
+    GetWorldTimerManager().ClearTimer(ScatterBuildTimer);
     ConiferPrimary->ClearInstances();
     ConiferSecondary->ClearInstances();
     BroadleafTrees->ClearInstances();
@@ -74,6 +84,7 @@ void AAetherBiomeScatterActor::ClearEnvironment()
     GroundCover->ClearInstances();
     BoulderPrimary->ClearInstances();
     BoulderSecondary->ClearInstances();
+    BuildAttempt = 0;
     bBuilt = false;
 }
 
@@ -133,7 +144,7 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     {
         return;
     }
-    bBuilt = true;
+    ++BuildAttempt;
 
     UStaticMesh* ConiferA = LoadFirstAvailable({
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_Conifer_A.SM_Conifer_A")),
@@ -193,6 +204,7 @@ void AAetherBiomeScatterActor::BuildEnvironment()
 
     if (!ConiferA && !ConiferB && !Broadleaf && !Shrub && !Cover && !BoulderA && !BoulderB)
     {
+        bBuilt = true;
         UE_LOG(LogTemp, Warning,
             TEXT("[Aether] High-quality environment meshes are not installed. Run AuditEnvironmentAssets_UE58.py and follow HIGH_QUALITY_ENVIRONMENT_SETUP.md."));
         return;
@@ -227,6 +239,21 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         + ConiferSecondary->GetInstanceCount() + BroadleafTrees->GetInstanceCount();
     const int32 UnderstoryCount = Shrubs->GetInstanceCount() + GroundCover->GetInstanceCount();
     const int32 RockCount = BoulderPrimary->GetInstanceCount() + BoulderSecondary->GetInstanceCount();
+    if (TreeCount == 0 && RockCount == 0 && BuildAttempt < AetherEnvironment::MaxBuildAttempts)
+    {
+        UE_LOG(LogTemp, Display,
+            TEXT("[Aether] Landscape streaming is not ready; retrying ecosystem build (%d/%d)."),
+            BuildAttempt, AetherEnvironment::MaxBuildAttempts);
+        GetWorldTimerManager().SetTimer(
+            ScatterBuildTimer,
+            this,
+            &AAetherBiomeScatterActor::BuildEnvironment,
+            AetherEnvironment::RetryBuildDelaySeconds,
+            false);
+        return;
+    }
+
+    bBuilt = true;
     UE_LOG(LogTemp, Display,
         TEXT("[Aether] Production ecosystem built: %d trees, %d understory plants, %d rocks."),
         TreeCount, UnderstoryCount, RockCount);
