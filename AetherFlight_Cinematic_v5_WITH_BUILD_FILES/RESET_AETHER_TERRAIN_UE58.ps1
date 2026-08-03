@@ -10,14 +10,15 @@ Set-StrictMode -Version Latest
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $UProject = Join-Path $ProjectRoot "AetherFlight.uproject"
-$BuildScript = Join-Path $ProjectRoot "BUILD_ME_FIRST.cmd"
+$BuildLog = Join-Path $ProjectRoot "Build_AetherFlight.log"
 $PythonRoot = Join-Path $ProjectRoot "Content\Python"
 $ResetScript = Join-Path $PythonRoot "ResetAetherTerrain_UE58.py"
 $InstallScript = Join-Path $PythonRoot "InstallAetherMeshTerrainClean_UE58.py"
+$EngineBuild = Join-Path $EngineRoot "Engine\Build\BatchFiles\Build.bat"
 $UnrealEditorCmd = Join-Path $EngineRoot "Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
 $UnrealEditor = Join-Path $EngineRoot "Engine\Binaries\Win64\UnrealEditor.exe"
 
-foreach ($Path in @($UProject, $ResetScript, $InstallScript, $UnrealEditorCmd)) {
+foreach ($Path in @($UProject, $ResetScript, $InstallScript, $EngineBuild, $UnrealEditorCmd)) {
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "Required file was not found: $Path"
     }
@@ -53,13 +54,20 @@ function Invoke-UnrealPython {
 }
 
 if (-not $SkipBuild) {
-    if (-not (Test-Path -LiteralPath $BuildScript)) {
-        throw "Build script was not found: $BuildScript"
-    }
     Write-Host "=== Building AetherFlightEditor ===" -ForegroundColor Cyan
-    & cmd.exe /c "`"$BuildScript`""
-    if ($LASTEXITCODE -ne 0) {
-        throw "AetherFlight build failed with exit code $LASTEXITCODE."
+    $BuildCommand = (
+        "`"$EngineBuild`" AetherFlightEditor Win64 Development " +
+        "-Project=`"$UProject`" -WaitMutex -NoHotReloadFromIDE " +
+        "> `"$BuildLog`" 2>&1"
+    )
+    & cmd.exe /d /c $BuildCommand
+    $BuildExitCode = $LASTEXITCODE
+
+    if (Test-Path -LiteralPath $BuildLog) {
+        Get-Content -LiteralPath $BuildLog
+    }
+    if ($BuildExitCode -ne 0) {
+        throw "AetherFlight build failed with exit code $BuildExitCode. Check $BuildLog"
     }
 }
 
