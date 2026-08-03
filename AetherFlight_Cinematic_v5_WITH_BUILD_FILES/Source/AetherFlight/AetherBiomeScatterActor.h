@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "TimerManager.h"
 #include "AetherBiomeScatterActor.generated.h"
 
 class UHierarchicalInstancedStaticMeshComponent;
@@ -95,5 +96,7 @@ private:
     float ValueNoise(float X, float Y) const;
     float HashNoise(int32 X, int32 Y) const;
 
+    FTimerHandle ScatterBuildTimer;
+    int32 BuildAttempt = 0;
     bool bBuilt = false;
 };
