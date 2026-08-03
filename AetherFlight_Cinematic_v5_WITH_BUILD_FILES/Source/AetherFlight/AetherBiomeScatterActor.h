@@ -126,6 +126,8 @@ private:
     bool FindLandscapeBounds(FBox2D& OutBounds) const;
     bool SampleLandscape(float X, float Y, float& OutHeightMeters, FVector& OutNormal) const;
     bool IsInsideRunwayClearance(float X, float Y) const;
+    bool IsInsideGeneratedWater(float X, float Y) const;
+    float HydrologyMoisture(float X, float Y) const;
     bool ReserveCell(TSet<uint64>& OccupiedCells, float X, float Y, float CellSize) const;
     bool TryAddTree(float X, float Y, FRandomStream& Random, TSet<uint64>& OccupiedCells);
     void TryAddUnderstory(float X, float Y, FRandomStream& Random);
