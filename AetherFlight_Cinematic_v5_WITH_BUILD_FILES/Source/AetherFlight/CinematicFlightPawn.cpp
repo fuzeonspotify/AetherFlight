@@ -1,5 +1,7 @@
 #include "CinematicFlightPawn.h"
 
+#include "AetherWingVaporComponent.h"
+
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -15,6 +17,8 @@
 ACinematicFlightPawn::ACinematicFlightPawn()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    WingVapor = CreateDefaultSubobject<UAetherWingVaporComponent>(TEXT("WingVapor"));
 
     PhysicsBody = CreateDefaultSubobject<UBoxComponent>(TEXT("PhysicsBody"));
     SetRootComponent(PhysicsBody);
@@ -157,6 +161,13 @@ float ACinematicFlightPawn::GetAltitudeFeet() const
 float ACinematicFlightPawn::GetMach() const
 {
     return (PhysicsBody->GetPhysicsLinearVelocity().Size() * 0.01f) / 343.0f;
+}
+
+float ACinematicFlightPawn::GetAngleOfAttackDegrees() const
+{
+    const FVector LocalVelocity = GetActorTransform().InverseTransformVectorNoScale(
+        PhysicsBody->GetPhysicsLinearVelocity());
+    return FMath::RadiansToDegrees(FMath::Atan2(-LocalVelocity.Z, FMath::Max(1.0f, LocalVelocity.X)));
 }
 
 FString ACinematicFlightPawn::GetCameraModeName() const
