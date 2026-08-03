@@ -19,6 +19,23 @@
 #include "ProceduralMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+    bool IsAuthoritativeMeshTerrainActor(const AActor* Actor)
+    {
+        if (!IsValid(Actor) || Actor->IsActorBeingDestroyed())
+        {
+            return false;
+        }
+
+        // Mesh Terrain is allowed to coexist while it is being authored.  It
+        // becomes the runtime ground only after the guarded finalizer adds this
+        // tag, so an unfinished Mesh Partition can never hide the working
+        // production Landscape.
+        return Actor->ActorHasTag(TEXT("AetherProductionTerrain"));
+    }
+}
+
 AProceduralWorldDirector::AProceduralWorldDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -172,7 +189,7 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
     if (bUsingProductionLandscape)
     {
         DisableRuntimePlaceholderTerrain();
-        UE_LOG(LogTemp, Display, TEXT("[Aether] Production Landscape detected; runtime placeholder terrain is disabled."));
+        UE_LOG(LogTemp, Display, TEXT("[Aether] Authored production terrain detected; runtime placeholder terrain is disabled."));
     }
     else if (bAllowRuntimePlaceholderTerrain)
     {
@@ -580,6 +597,14 @@ bool AProceduralWorldDirector::HasProductionLandscape() const
         return false;
     }
 
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (IsAuthoritativeMeshTerrainActor(*It))
+        {
+            return true;
+        }
+    }
+
     for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
     {
         ALandscapeProxy* Proxy = *It;
@@ -618,6 +643,16 @@ void AProceduralWorldDirector::ReconcileLandscapeState()
         return;
     }
 
+    bool bMeshTerrainAuthoritative = false;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (IsAuthoritativeMeshTerrainActor(*It))
+        {
+            bMeshTerrainAuthoritative = true;
+            break;
+        }
+    }
+
     ALandscape* ActiveRoot = nullptr;
     for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
     {
@@ -652,7 +687,7 @@ void AProceduralWorldDirector::ReconcileLandscapeState()
                 && RootLandscape->ActorHasTag(TEXT("AetherLegacyLandscape")));
         const bool bDifferentRoot = IsValid(ActiveRoot)
             && IsValid(RootLandscape) && RootLandscape != ActiveRoot;
-        if (bTaggedLegacy || bDifferentRoot)
+        if (bMeshTerrainAuthoritative || bTaggedLegacy || bDifferentRoot)
         {
             Proxy->SetActorHiddenInGame(true);
             Proxy->SetActorEnableCollision(false);
@@ -664,7 +699,9 @@ void AProceduralWorldDirector::ReconcileLandscapeState()
         bFoundUsableLandscape = true;
     }
 
-    if (bFoundUsableLandscape)
+    const bool bFoundUsableAuthoredTerrain =
+        bMeshTerrainAuthoritative || bFoundUsableLandscape;
+    if (bFoundUsableAuthoredTerrain)
     {
         const bool bWasUsingFallback = !bUsingProductionLandscape || (Terrain && Terrain->IsVisible());
         bUsingProductionLandscape = true;
@@ -676,7 +713,8 @@ void AProceduralWorldDirector::ReconcileLandscapeState()
         if (bWasUsingFallback || DisabledLegacyProxyCount > 0)
         {
             UE_LOG(LogTemp, Display,
-                TEXT("[Aether Terrain] Production Landscape active; placeholder cleared and %d legacy proxies suppressed."),
+                TEXT("[Aether Terrain] Production %s active; placeholder cleared and %d Landscape proxies suppressed."),
+                bMeshTerrainAuthoritative ? TEXT("Mesh Terrain") : TEXT("Landscape"),
                 DisabledLegacyProxyCount);
         }
     }
