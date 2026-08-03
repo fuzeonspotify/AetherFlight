@@ -63,10 +63,42 @@ def expression(material, expression_class, x, y):
 
 
 def connect(source, source_output, target, target_input, description):
-    if not unreal.MaterialEditingLibrary.connect_material_expressions(
-        source, source_output, target, target_input
-    ):
-        raise RuntimeError(f"Could not connect {description}")
+    """Connect material pins across UE Python API naming differences.
+
+    UE 5.8 exposes the sole input on several unary material expressions as an
+    unnamed pin even though earlier builds accepted ``Input``.  ComponentMask,
+    Abs, Saturate and OneMinus are all used by this graph, so handling the
+    alias centrally prevents the installer from failing one node at a time.
+    """
+    source_outputs = (
+        tuple(source_output)
+        if isinstance(source_output, (tuple, list))
+        else (source_output,)
+    )
+    target_inputs = (
+        list(target_input)
+        if isinstance(target_input, (tuple, list))
+        else [target_input]
+    )
+    if target_input == "Input" and "" not in target_inputs:
+        target_inputs.append("")
+
+    attempted = []
+    for output_name in source_outputs:
+        for input_name in target_inputs:
+            attempted.append((output_name, input_name))
+            try:
+                connected = unreal.MaterialEditingLibrary.connect_material_expressions(
+                    source, output_name, target, input_name
+                )
+                if connected:
+                    return
+            except Exception:
+                pass
+
+    raise RuntimeError(
+        f"Could not connect {description}; tried pin pairs {tuple(attempted)}"
+    )
 
 
 def constant(material, value, x=0, y=0):
