@@ -391,6 +391,7 @@ void AProceduralWorldDirector::GenerateOcean()
         {
             OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
             OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("WaveChoppiness"), CurrentWaveChoppiness);
             OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
             UE_LOG(LogTemp, Display, TEXT("[Aether Water] Dynamic Single Layer Water ocean is active."));
         }
@@ -404,6 +405,8 @@ void AProceduralWorldDirector::UpdateOceanSurface(const float DeltaSeconds)
         CurrentSeaState = FMath::FInterpTo(CurrentSeaState, TargetSeaState, DeltaSeconds, 0.16f);
         CurrentOceanRoughness = FMath::FInterpTo(
             CurrentOceanRoughness, TargetOceanRoughness, DeltaSeconds, 0.22f);
+        CurrentWaveChoppiness = FMath::FInterpTo(
+            CurrentWaveChoppiness, TargetWaveChoppiness, DeltaSeconds, 0.18f);
         CurrentFoamAmount = FMath::FInterpTo(CurrentFoamAmount, TargetFoamAmount, DeltaSeconds, 0.18f);
     }
 
@@ -411,6 +414,7 @@ void AProceduralWorldDirector::UpdateOceanSurface(const float DeltaSeconds)
     {
         OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
         OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("WaveChoppiness"), CurrentWaveChoppiness);
         OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
     }
 }
@@ -632,6 +636,7 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunRotation = FRotator(-12.0f, -48.0f, 0.0f);
         TargetSeaState = 0.34f;
         TargetOceanRoughness = 0.045f;
+        TargetWaveChoppiness = 0.22f;
         TargetFoamAmount = 0.05f;
         break;
     case EAetherWeather::BrokenClouds:
@@ -642,6 +647,7 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunRotation = FRotator(-28.0f, -35.0f, 0.0f);
         TargetSeaState = 0.68f;
         TargetOceanRoughness = 0.075f;
+        TargetWaveChoppiness = 0.42f;
         TargetFoamAmount = 0.18f;
         break;
     case EAetherWeather::StormFront:
@@ -652,6 +658,7 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunRotation = FRotator(-18.0f, 20.0f, 0.0f);
         TargetSeaState = 1.25f;
         TargetOceanRoughness = 0.15f;
+        TargetWaveChoppiness = 0.72f;
         TargetFoamAmount = 0.60f;
         break;
     case EAetherWeather::BlueHour:
@@ -662,6 +669,7 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunRotation = FRotator(-3.0f, -62.0f, 0.0f);
         TargetSeaState = 0.52f;
         TargetOceanRoughness = 0.06f;
+        TargetWaveChoppiness = 0.34f;
         TargetFoamAmount = 0.12f;
         break;
     }
@@ -671,6 +679,7 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         CurrentStorminess = TargetStorminess;
         CurrentSeaState = TargetSeaState;
         CurrentOceanRoughness = TargetOceanRoughness;
+        CurrentWaveChoppiness = TargetWaveChoppiness;
         CurrentFoamAmount = TargetFoamAmount;
         UpdateOceanSurface(0.0f);
         HeightFog->SetFogDensity(TargetFogDensity);
