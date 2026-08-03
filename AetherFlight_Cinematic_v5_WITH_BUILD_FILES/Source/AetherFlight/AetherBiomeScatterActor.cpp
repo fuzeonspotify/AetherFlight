@@ -18,11 +18,20 @@ namespace AetherEnvironment
     constexpr float TraceBottomCm = -300000.0f;
     constexpr float DefaultHalfWorldCm = 2400000.0f;
     constexpr float LandscapeBorderCm = 12000.0f;
-    constexpr float TreeCellSizeCm = 850.0f;
-    constexpr float RockCellSizeCm = 1800.0f;
+    constexpr float TreeCellSizeCm = 1900.0f;
+    constexpr float RockCellSizeCm = 2600.0f;
     constexpr float InitialBuildDelaySeconds = 2.0f;
     constexpr float RetryBuildDelaySeconds = 2.0f;
     constexpr int32 MaxBuildAttempts = 6;
+
+    enum class EBiomeType : uint8
+    {
+        Alpine,
+        Boreal,
+        AspenValley,
+        DryWoodland,
+        Coastal
+    };
 }
 
 AAetherBiomeScatterActor::AAetherBiomeScatterActor()
@@ -36,6 +45,9 @@ AAetherBiomeScatterActor::AAetherBiomeScatterActor()
     ConiferPrimary = CreateScatterComponent(TEXT("ConiferPrimary"), 2400000, 6000000);
     ConiferSecondary = CreateScatterComponent(TEXT("ConiferSecondary"), 2400000, 6000000);
     BroadleafTrees = CreateScatterComponent(TEXT("BroadleafTrees"), 1900000, 4800000);
+    CorkOakTrees = CreateScatterComponent(TEXT("CorkOakTrees"), 1900000, 4800000);
+    WindmillPalms = CreateScatterComponent(TEXT("WindmillPalms"), 1900000, 4800000);
+    CoconutPalms = CreateScatterComponent(TEXT("CoconutPalms"), 1900000, 4800000);
     Shrubs = CreateScatterComponent(TEXT("Shrubs"), 260000, 850000);
     GroundCover = CreateScatterComponent(TEXT("GroundCover"), 90000, 350000);
     BoulderPrimary = CreateScatterComponent(TEXT("BoulderPrimary"), 1200000, 4200000);
@@ -79,6 +91,28 @@ UHierarchicalInstancedStaticMeshComponent* AAetherBiomeScatterActor::CreateScatt
     return Component;
 }
 
+TArray<UHierarchicalInstancedStaticMeshComponent*> AAetherBiomeScatterActor::GetTreeComponents() const
+{
+    return {
+        ConiferPrimary,
+        ConiferSecondary,
+        BroadleafTrees,
+        CorkOakTrees,
+        WindmillPalms,
+        CoconutPalms
+    };
+}
+
+int32 AAetherBiomeScatterActor::GetTreeInstanceCount() const
+{
+    int32 Count = 0;
+    for (const UHierarchicalInstancedStaticMeshComponent* TreeComponent : GetTreeComponents())
+    {
+        Count += TreeComponent->GetInstanceCount();
+    }
+    return Count;
+}
+
 TArray<UHierarchicalInstancedStaticMeshComponent*> AAetherBiomeScatterActor::GetRockComponents() const
 {
     return {
@@ -105,9 +139,10 @@ int32 AAetherBiomeScatterActor::GetRockInstanceCount() const
 void AAetherBiomeScatterActor::ClearEnvironment()
 {
     GetWorldTimerManager().ClearTimer(ScatterBuildTimer);
-    ConiferPrimary->ClearInstances();
-    ConiferSecondary->ClearInstances();
-    BroadleafTrees->ClearInstances();
+    for (UHierarchicalInstancedStaticMeshComponent* TreeComponent : GetTreeComponents())
+    {
+        TreeComponent->ClearInstances();
+    }
     Shrubs->ClearInstances();
     GroundCover->ClearInstances();
     for (UHierarchicalInstancedStaticMeshComponent* RockComponent : GetRockComponents())
@@ -188,6 +223,18 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_Broadleaf_A.SM_Broadleaf_A")),
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_Broadleaf.SM_Broadleaf"))
     });
+    UStaticMesh* CorkOak = LoadFirstAvailable({
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_CorkOak_A.SM_CorkOak_A")),
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_CorkOak.SM_CorkOak"))
+    });
+    UStaticMesh* WindmillPalm = LoadFirstAvailable({
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_WindmillPalm_A.SM_WindmillPalm_A")),
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_WindmillPalm.SM_WindmillPalm"))
+    });
+    UStaticMesh* CoconutPalm = LoadFirstAvailable({
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_CoconutPalm_A.SM_CoconutPalm_A")),
+        FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_CoconutPalm.SM_CoconutPalm"))
+    });
     UStaticMesh* Shrub = LoadFirstAvailable({
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_Shrub_A.SM_Shrub_A")),
         FSoftObjectPath(TEXT("/Game/Aether/Environment/Foliage/SM_Shrub.SM_Shrub"))
@@ -214,6 +261,15 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     const TArray<UStaticMesh*> AspenMeshes = LoadLargestMeshesInPaths({
         FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Aspen"))
     }, 1);
+    const TArray<UStaticMesh*> CorkOakMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Cork_Oak"))
+    }, 1);
+    const TArray<UStaticMesh*> WindmillPalmMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Windmill_Palm"))
+    }, 1);
+    const TArray<UStaticMesh*> CoconutPalmMeshes = LoadLargestMeshesInPaths({
+        FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Coconut_Tree"))
+    }, 1);
     const TArray<UStaticMesh*> RockMeshes = LoadLargestMeshesInPaths({
         FName(TEXT("/Game/Aether/Environment/Rocks")),
         FName(TEXT("/Game/Rocks")),
@@ -228,7 +284,14 @@ void AAetherBiomeScatterActor::BuildEnvironment()
 
     ConiferA = ConiferA ? ConiferA : (PineMeshes.Num() > 0 ? PineMeshes[0] : nullptr);
     ConiferB = ConiferB ? ConiferB : (PineMeshes.Num() > 1 ? PineMeshes[1] : nullptr);
+    ConiferA = ConiferA ? ConiferA : ConiferB;
+    ConiferB = ConiferB ? ConiferB : ConiferA;
     Broadleaf = Broadleaf ? Broadleaf : (AspenMeshes.Num() > 0 ? AspenMeshes[0] : nullptr);
+    CorkOak = CorkOak ? CorkOak : (CorkOakMeshes.Num() > 0 ? CorkOakMeshes[0] : nullptr);
+    WindmillPalm = WindmillPalm ? WindmillPalm
+        : (WindmillPalmMeshes.Num() > 0 ? WindmillPalmMeshes[0] : nullptr);
+    CoconutPalm = CoconutPalm ? CoconutPalm
+        : (CoconutPalmMeshes.Num() > 0 ? CoconutPalmMeshes[0] : nullptr);
     TArray<UStaticMesh*> SelectedRockMeshes;
     if (BoulderA)
     {
@@ -243,7 +306,8 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         SelectedRockMeshes.AddUnique(RockMesh);
     }
 
-    if (!ConiferA && !ConiferB && !Broadleaf && !Shrub && !Cover && SelectedRockMeshes.Num() == 0)
+    if (!ConiferA && !ConiferB && !Broadleaf && !CorkOak && !WindmillPalm && !CoconutPalm
+        && !Shrub && !Cover && SelectedRockMeshes.Num() == 0)
     {
         bBuilt = true;
         UE_LOG(LogTemp, Warning,
@@ -251,10 +315,12 @@ void AAetherBiomeScatterActor::BuildEnvironment()
         return;
     }
 
-    ConiferB = ConiferB ? ConiferB : ConiferA;
     ConiferPrimary->SetStaticMesh(ConiferA);
     ConiferSecondary->SetStaticMesh(ConiferB);
     BroadleafTrees->SetStaticMesh(Broadleaf);
+    CorkOakTrees->SetStaticMesh(CorkOak);
+    WindmillPalms->SetStaticMesh(WindmillPalm);
+    CoconutPalms->SetStaticMesh(CoconutPalm);
     Shrubs->SetStaticMesh(Shrub);
     GroundCover->SetStaticMesh(Cover);
     const TArray<UHierarchicalInstancedStaticMeshComponent*> RockComponents = GetRockComponents();
@@ -279,8 +345,7 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     GenerateRocks(Bounds, Random);
     DisableLegacyScatterIfReplaced();
 
-    const int32 TreeCount = ConiferPrimary->GetInstanceCount()
-        + ConiferSecondary->GetInstanceCount() + BroadleafTrees->GetInstanceCount();
+    const int32 TreeCount = GetTreeInstanceCount();
     const int32 UnderstoryCount = Shrubs->GetInstanceCount() + GroundCover->GetInstanceCount();
     const int32 RockCount = GetRockInstanceCount();
     if (TreeCount == 0 && RockCount == 0 && BuildAttempt < AetherEnvironment::MaxBuildAttempts)
@@ -299,8 +364,16 @@ void AAetherBiomeScatterActor::BuildEnvironment()
 
     bBuilt = true;
     UE_LOG(LogTemp, Display,
-        TEXT("[Aether] Production ecosystem built: %d trees, %d understory plants, %d rocks."),
-        TreeCount, UnderstoryCount, RockCount);
+        TEXT("[Aether] Ecosystem built: %d trees (%d pine A, %d pine B, %d aspen, %d cork oak, %d windmill palm, %d coconut), %d understory plants, %d rocks."),
+        TreeCount,
+        ConiferPrimary->GetInstanceCount(),
+        ConiferSecondary->GetInstanceCount(),
+        BroadleafTrees->GetInstanceCount(),
+        CorkOakTrees->GetInstanceCount(),
+        WindmillPalms->GetInstanceCount(),
+        CoconutPalms->GetInstanceCount(),
+        UnderstoryCount,
+        RockCount);
 }
 
 bool AAetherBiomeScatterActor::FindLandscapeBounds(FBox2D& OutBounds) const
@@ -377,46 +450,51 @@ bool AAetherBiomeScatterActor::ReserveCell(
 
 void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStream& Random)
 {
-    if (!ConiferPrimary->GetStaticMesh() && !ConiferSecondary->GetStaticMesh()
-        && !BroadleafTrees->GetStaticMesh())
+    bool bHasAnyTreeMesh = false;
+    for (const UHierarchicalInstancedStaticMeshComponent* TreeComponent : GetTreeComponents())
+    {
+        bHasAnyTreeMesh |= TreeComponent->GetStaticMesh() != nullptr;
+    }
+    if (!bHasAnyTreeMesh || TreeInstanceBudget <= 0)
     {
         return;
     }
 
+    // Uniform candidates plus minimum spacing prevent the circular megaclusters
+    // produced by the old algorithm. Low-frequency noise only changes density,
+    // leaving gradual biome transitions and natural open clearings.
     TSet<uint64> OccupiedTreeCells;
-    const int32 ClusterAttempts = ForestClusterBudget * 4;
-    int32 AcceptedClusters = 0;
-    for (int32 Attempt = 0; Attempt < ClusterAttempts && AcceptedClusters < ForestClusterBudget; ++Attempt)
+    const int32 Attempts = TreeInstanceBudget * 8;
+    int32 AcceptedTrees = GetTreeInstanceCount();
+    for (int32 Attempt = 0; Attempt < Attempts && AcceptedTrees < TreeInstanceBudget; ++Attempt)
     {
-        const float CenterX = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
-        const float CenterY = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
-        if (IsInsideRunwayClearance(CenterX, CenterY))
+        const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
+        const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
+        if (IsInsideRunwayClearance(X, Y))
         {
             continue;
         }
 
-        const float ForestSignal = ValueNoise(CenterX * 0.0000043f + 17.0f, CenterY * 0.0000043f - 53.0f);
-        const float MoistureSignal = ValueNoise(CenterX * 0.0000021f - 81.0f, CenterY * 0.0000021f + 29.0f);
-        if (ForestSignal < 0.36f || MoistureSignal < 0.27f)
+        const float MacroBiome = ValueNoise(X * 0.00000125f + 17.0f, Y * 0.00000125f - 53.0f);
+        const float ForestDetail = ValueNoise(X * 0.0000058f - 81.0f, Y * 0.0000058f + 29.0f);
+        const float MoistureField = ValueNoise(X * 0.0000031f + 91.0f, Y * 0.0000031f - 44.0f);
+        const float ClearingField = ValueNoise(X * 0.0000024f - 31.0f, Y * 0.0000024f + 72.0f);
+
+        float Density = FMath::Clamp(
+            0.12f + MacroBiome * 0.26f + ForestDetail * 0.24f + MoistureField * 0.20f,
+            0.10f, 0.78f);
+        if (ClearingField < 0.18f)
         {
-            continue;
+            Density *= 0.18f;
+        }
+        else if (ClearingField < 0.29f)
+        {
+            Density *= 0.58f;
         }
 
-        ++AcceptedClusters;
-        const float Radius = Random.FRandRange(28000.0f, 72000.0f);
-        const int32 ClusterTrees = FMath::Max(4, FMath::RoundToInt(
-            TreesPerCluster * Random.FRandRange(0.65f, 1.35f)));
-        for (int32 TreeIndex = 0; TreeIndex < ClusterTrees; ++TreeIndex)
+        if (Random.FRand() <= Density && TryAddTree(X, Y, Random, OccupiedTreeCells))
         {
-            const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
-            const float Distance = FMath::Sqrt(Random.FRand()) * Radius;
-            const float X = CenterX + FMath::Cos(Angle) * Distance;
-            const float Y = CenterY + FMath::Sin(Angle) * Distance;
-            if (X <= Bounds.Min.X || X >= Bounds.Max.X || Y <= Bounds.Min.Y || Y >= Bounds.Max.Y)
-            {
-                continue;
-            }
-            TryAddTree(X, Y, Random, OccupiedTreeCells);
+            ++AcceptedTrees;
         }
     }
 }
@@ -424,8 +502,7 @@ void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStrea
 bool AAetherBiomeScatterActor::TryAddTree(
     const float X, const float Y, FRandomStream& Random, TSet<uint64>& OccupiedCells)
 {
-    if (IsInsideRunwayClearance(X, Y)
-        || !ReserveCell(OccupiedCells, X, Y, AetherEnvironment::TreeCellSizeCm))
+    if (IsInsideRunwayClearance(X, Y))
     {
         return false;
     }
@@ -438,46 +515,117 @@ bool AAetherBiomeScatterActor::TryAddTree(
     }
 
     const float Slope = 1.0f - FMath::Clamp(Normal.Z, 0.0f, 1.0f);
-    const float Moisture = ValueNoise(X * 0.0000061f + 91.0f, Y * 0.0000061f - 44.0f);
-    const float Exposure = ValueNoise(X * 0.0000117f - 15.0f, Y * 0.0000117f + 63.0f);
-    if (HeightMeters < 16.0f || HeightMeters > 1850.0f || Slope > 0.31f
-        || Moisture < 0.24f || Exposure < 0.19f)
+    const float Moisture = ValueNoise(X * 0.0000046f + 91.0f, Y * 0.0000046f - 44.0f);
+    const float Exposure = ValueNoise(X * 0.0000097f - 15.0f, Y * 0.0000097f + 63.0f);
+    const float MacroBiome = ValueNoise(X * 0.00000125f + 17.0f, Y * 0.00000125f - 53.0f);
+    const float Warmth = FMath::Clamp(
+        1.0f - HeightMeters / 2200.0f + (MacroBiome - 0.5f) * 0.45f,
+        0.0f, 1.0f);
+    if (HeightMeters < 12.0f || HeightMeters > 2100.0f || Slope > 0.38f || Exposure < 0.12f)
     {
         return false;
+    }
+
+    AetherEnvironment::EBiomeType Biome = AetherEnvironment::EBiomeType::Boreal;
+    if (HeightMeters > 1250.0f || Warmth < 0.34f)
+    {
+        Biome = AetherEnvironment::EBiomeType::Alpine;
+    }
+    else if (HeightMeters < 560.0f && Warmth > 0.61f && MacroBiome > 0.46f)
+    {
+        Biome = AetherEnvironment::EBiomeType::Coastal;
+    }
+    else if (Moisture > 0.61f && MacroBiome < 0.67f)
+    {
+        Biome = AetherEnvironment::EBiomeType::AspenValley;
+    }
+    else if (Warmth > 0.54f && Moisture < 0.56f)
+    {
+        Biome = AetherEnvironment::EBiomeType::DryWoodland;
     }
 
     UHierarchicalInstancedStaticMeshComponent* Target = nullptr;
     const float SpeciesRoll = Random.FRand();
-    if (HeightMeters < 720.0f && Moisture > 0.56f && BroadleafTrees->GetStaticMesh() && SpeciesRoll < 0.34f)
+    switch (Biome)
     {
-        Target = BroadleafTrees;
-    }
-    else if (ConiferSecondary->GetStaticMesh() && SpeciesRoll > 0.57f)
-    {
-        Target = ConiferSecondary;
-    }
-    else if (ConiferPrimary->GetStaticMesh())
-    {
-        Target = ConiferPrimary;
-    }
-    else
-    {
-        Target = BroadleafTrees;
+    case AetherEnvironment::EBiomeType::Alpine:
+        Target = SpeciesRoll < 0.72f ? ConiferPrimary : ConiferSecondary;
+        break;
+    case AetherEnvironment::EBiomeType::AspenValley:
+        Target = SpeciesRoll < 0.58f
+            ? BroadleafTrees
+            : (SpeciesRoll < 0.83f ? ConiferSecondary : CorkOakTrees);
+        break;
+    case AetherEnvironment::EBiomeType::DryWoodland:
+        Target = SpeciesRoll < 0.58f
+            ? CorkOakTrees
+            : (SpeciesRoll < 0.78f ? BroadleafTrees : ConiferPrimary);
+        break;
+    case AetherEnvironment::EBiomeType::Coastal:
+        Target = SpeciesRoll < 0.44f
+            ? CoconutPalms
+            : (SpeciesRoll < 0.78f ? WindmillPalms
+                : (SpeciesRoll < 0.91f ? CorkOakTrees : BroadleafTrees));
+        break;
+    default:
+        Target = SpeciesRoll < 0.34f
+            ? ConiferPrimary
+            : (SpeciesRoll < 0.61f ? ConiferSecondary
+                : (SpeciesRoll < 0.82f ? BroadleafTrees : CorkOakTrees));
+        break;
     }
 
     if (!Target || !Target->GetStaticMesh())
     {
+        TArray<UHierarchicalInstancedStaticMeshComponent*> AvailableTrees;
+        for (UHierarchicalInstancedStaticMeshComponent* TreeComponent : GetTreeComponents())
+        {
+            if (TreeComponent->GetStaticMesh())
+            {
+                AvailableTrees.Add(TreeComponent);
+            }
+        }
+        if (AvailableTrees.Num() == 0)
+        {
+            return false;
+        }
+        Target = AvailableTrees[Random.RandRange(0, AvailableTrees.Num() - 1)];
+    }
+
+    if (!ReserveCell(OccupiedCells, X, Y, AetherEnvironment::TreeCellSizeCm))
+    {
         return false;
     }
 
-    const float UniformScale = Random.FRandRange(0.72f, 1.36f);
-    const float WidthScale = UniformScale * Random.FRandRange(0.88f, 1.12f);
-    const float HeightScale = UniformScale * Random.FRandRange(0.92f, 1.20f);
+    float MinScale = 0.72f;
+    float MaxScale = 1.42f;
+    if (Biome == AetherEnvironment::EBiomeType::Alpine)
+    {
+        MinScale = 0.54f;
+        MaxScale = 1.08f;
+    }
+    else if (Biome == AetherEnvironment::EBiomeType::DryWoodland)
+    {
+        MinScale = 0.68f;
+        MaxScale = 1.22f;
+    }
+
+    const float UniformScale = Random.FRandRange(MinScale, MaxScale);
+    float WidthScale = UniformScale * Random.FRandRange(0.84f, 1.14f);
+    float HeightScale = UniformScale * Random.FRandRange(0.91f, 1.24f);
+    if (Target == WindmillPalms || Target == CoconutPalms)
+    {
+        WidthScale *= Random.FRandRange(0.76f, 0.96f);
+        HeightScale *= Random.FRandRange(1.08f, 1.34f);
+    }
+
     const FRotator Rotation(
-        Random.FRandRange(-1.3f, 1.3f), Random.FRandRange(-180.0f, 180.0f), Random.FRandRange(-1.3f, 1.3f));
+        Random.FRandRange(-1.5f, 1.5f),
+        Random.FRandRange(-180.0f, 180.0f),
+        Random.FRandRange(-1.5f, 1.5f));
     Target->AddInstance(FTransform(
         Rotation,
-        FVector(X, Y, HeightMeters * 100.0f - 4.0f),
+        FVector(X, Y, HeightMeters * 100.0f - Random.FRandRange(2.0f, 10.0f)),
         FVector(WidthScale, WidthScale, HeightScale)), false);
 
     TryAddUnderstory(X, Y, Random);
@@ -533,59 +681,152 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
             AvailableRockComponents.Add(RockComponent);
         }
     }
-    if (AvailableRockComponents.Num() == 0)
+    if (AvailableRockComponents.Num() == 0 || RockInstanceBudget <= 0)
     {
         return;
     }
 
-    TSet<uint64> OccupiedRockCells;
-    const int32 Attempts = RockInstanceBudget * 12;
-    int32 RockCount = 0;
-    for (int32 Attempt = 0; Attempt < Attempts && RockCount < RockInstanceBudget; ++Attempt)
+    TSet<uint64> OccupiedSoloCells;
+    TSet<uint64> OccupiedFormationCells;
+    TSet<uint64> FormationCenterCells;
+    int32 RockCount = GetRockInstanceCount();
+
+    auto TryPlaceRock = [&](const float X, const float Y, const float MinScale,
+                            const float MaxScale, const bool bFormationRock) -> bool
     {
-        const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
-        const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
-        if (IsInsideRunwayClearance(X, Y)
-            || !ReserveCell(OccupiedRockCells, X, Y, AetherEnvironment::RockCellSizeCm))
+        if (RockCount >= RockInstanceBudget || IsInsideRunwayClearance(X, Y))
         {
-            continue;
+            return false;
         }
 
         float HeightMeters = 0.0f;
         FVector Normal = FVector::UpVector;
         if (!SampleLandscape(X, Y, HeightMeters, Normal))
         {
-            continue;
+            return false;
         }
 
         const float Slope = 1.0f - FMath::Clamp(Normal.Z, 0.0f, 1.0f);
-        const float Exposure = ValueNoise(X * 0.0000103f - 14.0f, Y * 0.0000103f + 62.0f);
-        const float Outcrop = ValueNoise(X * 0.000027f + 39.0f, Y * 0.000027f - 77.0f);
-        if (HeightMeters < 18.0f || HeightMeters > 2350.0f
-            || (Slope < 0.055f && Outcrop < 0.73f) || Exposure < 0.42f)
+        const float Exposure = ValueNoise(X * 0.0000063f - 14.0f, Y * 0.0000063f + 62.0f);
+        const float Outcrop = ValueNoise(X * 0.0000027f + 39.0f, Y * 0.0000027f - 77.0f);
+        if (HeightMeters < 10.0f || HeightMeters > 2450.0f)
         {
-            continue;
+            return false;
+        }
+
+        if (!bFormationRock)
+        {
+            const float Density = FMath::Clamp(
+                0.09f + Slope * 1.55f + Exposure * 0.22f + Outcrop * 0.28f,
+                0.10f, 0.88f);
+            if (Random.FRand() > Density)
+            {
+                return false;
+            }
+        }
+
+        TSet<uint64>& OccupiedCells = bFormationRock ? OccupiedFormationCells : OccupiedSoloCells;
+        const float CellSize = bFormationRock
+            ? AetherEnvironment::RockCellSizeCm * 0.30f
+            : AetherEnvironment::RockCellSizeCm;
+        if (!ReserveCell(OccupiedCells, X, Y, CellSize))
+        {
+            return false;
         }
 
         UHierarchicalInstancedStaticMeshComponent* Target = AvailableRockComponents[
             Random.RandRange(0, AvailableRockComponents.Num() - 1)];
+        const float BaseScale = Random.FRandRange(MinScale, MaxScale);
+        FVector Scale(
+            BaseScale * Random.FRandRange(0.72f, 1.36f),
+            BaseScale * Random.FRandRange(0.72f, 1.32f),
+            BaseScale * Random.FRandRange(0.62f, 1.24f));
 
         FRotator Rotation = FRotationMatrix::MakeFromZ(Normal).Rotator();
         Rotation.Yaw += Random.FRandRange(-180.0f, 180.0f);
-        const FVector Scale(
-            Random.FRandRange(0.65f, 2.8f),
-            Random.FRandRange(0.65f, 2.35f),
-            Random.FRandRange(0.55f, 2.45f));
+        Rotation.Pitch += Random.FRandRange(-6.0f, 6.0f);
+        Rotation.Roll += Random.FRandRange(-6.0f, 6.0f);
+        const float BuryDepth = FMath::Lerp(8.0f, 150.0f, FMath::Clamp(BaseScale / 7.0f, 0.0f, 1.0f));
         Target->AddInstance(FTransform(
-            Rotation, FVector(X, Y, HeightMeters * 100.0f - Random.FRandRange(8.0f, 55.0f)), Scale), false);
+            Rotation,
+            FVector(X, Y, HeightMeters * 100.0f - Random.FRandRange(BuryDepth * 0.45f, BuryDepth)),
+            Scale), false);
         ++RockCount;
+        return true;
+    };
+
+    // Most rocks are evenly dispersed singles. The size distribution strongly
+    // favors small stones but still produces boulders and rare landmarks.
+    const int32 SoloTarget = FMath::RoundToInt(RockInstanceBudget * 0.82f);
+    const int32 SoloAttempts = RockInstanceBudget * 12;
+    for (int32 Attempt = 0; Attempt < SoloAttempts && RockCount < SoloTarget; ++Attempt)
+    {
+        const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
+        const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
+        const float SizeRoll = Random.FRand();
+        if (SizeRoll < 0.52f)
+        {
+            TryPlaceRock(X, Y, 0.20f, 0.72f, false);
+        }
+        else if (SizeRoll < 0.86f)
+        {
+            TryPlaceRock(X, Y, 0.70f, 1.75f, false);
+        }
+        else if (SizeRoll < 0.975f)
+        {
+            TryPlaceRock(X, Y, 1.70f, 4.20f, false);
+        }
+        else
+        {
+            TryPlaceRock(X, Y, 4.50f, 8.50f, false);
+        }
+    }
+
+    // Widely separated formations have one dominant boulder surrounded by
+    // irregular satellites. They read as geological features, not asset patches.
+    const int32 FormationTarget = FMath::Clamp(RockInstanceBudget / 70, 18, 140);
+    int32 FormationsPlaced = 0;
+    for (int32 Attempt = 0; Attempt < FormationTarget * 12
+        && FormationsPlaced < FormationTarget && RockCount < RockInstanceBudget; ++Attempt)
+    {
+        const float CenterX = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
+        const float CenterY = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
+        if (!ReserveCell(FormationCenterCells, CenterX, CenterY, 32000.0f)
+            || !TryPlaceRock(CenterX, CenterY, 2.40f, 6.80f, true))
+        {
+            continue;
+        }
+
+        ++FormationsPlaced;
+        const int32 SatelliteCount = Random.RandRange(3, 9);
+        const float FormationRadius = Random.FRandRange(1400.0f, 9200.0f);
+        for (int32 Satellite = 0; Satellite < SatelliteCount && RockCount < RockInstanceBudget; ++Satellite)
+        {
+            const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
+            const float Distance = FMath::Sqrt(Random.FRand()) * FormationRadius;
+            const float RockX = CenterX + FMath::Cos(Angle) * Distance;
+            const float RockY = CenterY + FMath::Sin(Angle) * Distance;
+            if (RockX <= Bounds.Min.X || RockX >= Bounds.Max.X
+                || RockY <= Bounds.Min.Y || RockY >= Bounds.Max.Y)
+            {
+                continue;
+            }
+
+            if (Random.FRand() < 0.70f)
+            {
+                TryPlaceRock(RockX, RockY, 0.24f, 1.35f, true);
+            }
+            else
+            {
+                TryPlaceRock(RockX, RockY, 1.20f, 3.20f, true);
+            }
+        }
     }
 }
 
 void AAetherBiomeScatterActor::DisableLegacyScatterIfReplaced()
 {
-    const bool bHasTrees = ConiferPrimary->GetInstanceCount() + ConiferSecondary->GetInstanceCount()
-        + BroadleafTrees->GetInstanceCount() > 0;
+    const bool bHasTrees = GetTreeInstanceCount() > 0;
     const bool bHasRocks = GetRockInstanceCount() > 0;
     if (!bHasTrees && !bHasRocks)
     {
