@@ -12,6 +12,7 @@ import unreal
 
 PACKAGE = "/Game/Aether/Materials"
 NAME = "M_Ocean_Cinematic"
+ASSET_PACKAGE_PATH = f"{PACKAGE}/{NAME}"
 ASSET_PATH = f"{PACKAGE}/{NAME}.{NAME}"
 BACKUP_PACKAGE = f"{PACKAGE}/Backups"
 BACKUP_PATH = f"{BACKUP_PACKAGE}/{NAME}_PreExtreme"
@@ -71,7 +72,9 @@ def connect(source, target, input_names, description: str) -> None:
             result = unreal.MaterialEditingLibrary.connect_material_expressions(
                 source, "", target, input_name
             )
-            if result is not False:
+            # The API returns bool. Accepting None used to let invalid pin
+            # names through and produced the missing AppendVector-A graph.
+            if result:
                 return
         except Exception:
             pass
@@ -82,7 +85,7 @@ def output(material, source, material_property, description: str) -> None:
     result = unreal.MaterialEditingLibrary.connect_material_property(
         source, "", material_property
     )
-    if result is False:
+    if not result:
         raise RuntimeError(f"Could not connect material output: {description}")
 
 
@@ -214,7 +217,11 @@ def get_or_create_material():
                 log(f"Backed up the previous ocean material to {BACKUP_PATH}")
             else:
                 log("Warning: the optional material backup could not be created")
-        return material
+        # Force a clean generated material. UE may retain editor-only custom
+        # output nodes after delete_all_material_expressions, which caused two
+        # SingleLayerWater outputs in the saved asset.
+        if not unreal.EditorAssetLibrary.delete_asset(ASSET_PACKAGE_PATH):
+            raise RuntimeError(f"Could not replace broken generated asset {ASSET_PACKAGE_PATH}")
 
     material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
         NAME, PACKAGE, unreal.Material, unreal.MaterialFactoryNew()
