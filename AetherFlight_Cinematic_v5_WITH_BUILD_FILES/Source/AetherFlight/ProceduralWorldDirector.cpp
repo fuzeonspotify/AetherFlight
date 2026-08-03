@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "KismetProceduralMeshLibrary.h"
+#include "Landscape.h"
 #include "LandscapeProxy.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -141,6 +142,16 @@ void AProceduralWorldDirector::BeginPlay()
 void AProceduralWorldDirector::Tick(const float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    // World Partition can stream Landscape proxies after BeginPlay. Recheck
+    // briefly so late legacy proxies are hidden and a fallback mesh can never
+    // remain underneath the production terrain.
+    LandscapeReconcileAccumulator += DeltaSeconds;
+    if (LandscapeReconcilePassesRemaining > 0 && LandscapeReconcileAccumulator >= 0.5f)
+    {
+        LandscapeReconcileAccumulator = 0.0f;
+        --LandscapeReconcilePassesRemaining;
+        ReconcileLandscapeState();
+    }
     CurrentStorminess = FMath::FInterpTo(CurrentStorminess, TargetStorminess, DeltaSeconds, 0.22f);
     HeightFog->SetFogDensity(FMath::FInterpTo(HeightFog->FogDensity, TargetFogDensity, DeltaSeconds, 0.28f));
     Sun->SetIntensity(FMath::FInterpTo(Sun->Intensity, TargetSunIntensity, DeltaSeconds, 0.25f));
@@ -157,21 +168,25 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
     }
     bGenerated = true;
     AirbaseLocation.Z = AirbaseElevationMeters * 100.0f;
-    bUsingProductionLandscape = HasProductionLandscape();
+    ReconcileLandscapeState();
     if (bUsingProductionLandscape)
     {
-        Terrain->ClearAllMeshSections();
-        Terrain->SetVisibility(false, true);
-        Terrain->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        DisableRuntimePlaceholderTerrain();
         UE_LOG(LogTemp, Display, TEXT("[Aether] Production Landscape detected; runtime placeholder terrain is disabled."));
     }
-    else
+    else if (bAllowRuntimePlaceholderTerrain)
     {
         Terrain->SetVisibility(true, true);
         Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         GenerateTerrain();
         UE_LOG(LogTemp, Warning,
             TEXT("[Aether] No Landscape actor found. Using the low-detail fallback terrain. Import the production 4033 heightmap."));
+    }
+    else
+    {
+        DisableRuntimePlaceholderTerrain();
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Aether Terrain] No active production Landscape is loaded yet; placeholder terrain remains disabled to prevent overlap."));
     }
 
     if (HasAuthoredWater())
@@ -187,7 +202,22 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
         GenerateOcean();
     }
     GenerateRunwayMarkings();
-    GenerateEnvironmentInstances();
+    if (bUsingProductionLandscape)
+    {
+        // Production foliage is owned by AetherBiomeScatterActor. These old
+        // single-mesh fallback clusters could otherwise float on a legacy
+        // collision surface and double the instance count.
+        ForestInstances->ClearInstances();
+        ForestInstances->SetVisibility(false, true);
+        RockInstances->ClearInstances();
+        RockInstances->SetVisibility(false, true);
+    }
+    else if (bAllowRuntimePlaceholderTerrain)
+    {
+        ForestInstances->SetVisibility(true, true);
+        RockInstances->SetVisibility(true, true);
+        GenerateEnvironmentInstances();
+    }
     ConfigureAtmosphere();
 
     Runway->SetRelativeLocation(AirbaseLocation + FVector(0.0f, 0.0f, 45.0f));
@@ -552,12 +582,104 @@ bool AProceduralWorldDirector::HasProductionLandscape() const
 
     for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
     {
-        if (IsValid(*It) && !It->IsActorBeingDestroyed())
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        const bool bLegacy = Proxy->ActorHasTag(TEXT("AetherLegacyLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherLegacyLandscape")));
+        if (!bLegacy)
         {
             return true;
         }
     }
     return false;
+}
+
+void AProceduralWorldDirector::DisableRuntimePlaceholderTerrain()
+{
+    if (Terrain)
+    {
+        Terrain->ClearAllMeshSections();
+        Terrain->SetVisibility(false, true);
+        Terrain->SetHiddenInGame(true, true);
+        Terrain->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+}
+
+void AProceduralWorldDirector::ReconcileLandscapeState()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    ALandscape* ActiveRoot = nullptr;
+    for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+    {
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        if (Proxy->ActorHasTag(TEXT("AetherProductionLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherProductionLandscape"))))
+        {
+            ActiveRoot = RootLandscape;
+            break;
+        }
+    }
+
+    bool bFoundUsableLandscape = false;
+    int32 DisabledLegacyProxyCount = 0;
+    for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+    {
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        const bool bTaggedLegacy = Proxy->ActorHasTag(TEXT("AetherLegacyLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherLegacyLandscape")));
+        const bool bDifferentRoot = IsValid(ActiveRoot)
+            && IsValid(RootLandscape) && RootLandscape != ActiveRoot;
+        if (bTaggedLegacy || bDifferentRoot)
+        {
+            Proxy->SetActorHiddenInGame(true);
+            Proxy->SetActorEnableCollision(false);
+            Proxy->SetActorTickEnabled(false);
+            ++DisabledLegacyProxyCount;
+            continue;
+        }
+
+        bFoundUsableLandscape = true;
+    }
+
+    if (bFoundUsableLandscape)
+    {
+        const bool bWasUsingFallback = !bUsingProductionLandscape || (Terrain && Terrain->IsVisible());
+        bUsingProductionLandscape = true;
+        DisableRuntimePlaceholderTerrain();
+        ForestInstances->ClearInstances();
+        ForestInstances->SetVisibility(false, true);
+        RockInstances->ClearInstances();
+        RockInstances->SetVisibility(false, true);
+        if (bWasUsingFallback || DisabledLegacyProxyCount > 0)
+        {
+            UE_LOG(LogTemp, Display,
+                TEXT("[Aether Terrain] Production Landscape active; placeholder cleared and %d legacy proxies suppressed."),
+                DisabledLegacyProxyCount);
+        }
+    }
 }
 
 bool AProceduralWorldDirector::HasAuthoredWater() const
