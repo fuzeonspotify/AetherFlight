@@ -42,6 +42,16 @@ def find_first(paths):
     return None
 
 
+def static_meshes_under(package_path):
+    registry = unreal.AssetRegistryHelpers.get_asset_registry()
+    meshes = []
+    for asset_data in registry.get_assets_by_path(package_path, recursive=True):
+        asset = asset_data.get_asset()
+        if isinstance(asset, unreal.StaticMesh):
+            meshes.append(asset.get_path_name())
+    return meshes
+
+
 def main():
     found = {}
     lines = []
@@ -57,8 +67,24 @@ def main():
                 f"[Aether Environment Audit] MISSING {label}: expected {paths[0]}"
             )
 
-    essential_ready = bool(found["Primary conifer"] or found["Broadleaf tree"])
-    essential_ready = essential_ready and bool(found["Primary boulder"])
+    pine_meshes = static_meshes_under("/Game/DZ_Assets/DZ_Trees/Meshes/Pine")
+    aspen_meshes = static_meshes_under("/Game/DZ_Assets/DZ_Trees/Meshes/Aspen")
+    imported_rocks = static_meshes_under("/Game/Aether/Environment/Rocks")
+    for index in range(1, 8):
+        imported_rocks.extend(static_meshes_under(f"/Game/Rock_{index:02d}"))
+
+    lines.append(f"AUTO  DZ Pine meshes found: {len(pine_meshes)}")
+    lines.append(f"AUTO  DZ Aspen meshes found: {len(aspen_meshes)}")
+    lines.append(f"AUTO  SM_Rock-compatible meshes found: {len(imported_rocks)}")
+    unreal.log(
+        f"[Aether Environment Audit] Auto-discovery: {len(pine_meshes)} pine, "
+        f"{len(aspen_meshes)} aspen, {len(imported_rocks)} rock meshes"
+    )
+
+    trees_ready = bool(found["Primary conifer"] or found["Broadleaf tree"])
+    trees_ready = trees_ready or bool(pine_meshes or aspen_meshes)
+    rocks_ready = bool(found["Primary boulder"] or imported_rocks)
+    essential_ready = trees_ready and rocks_ready
     heading = (
         "Essential environment assets are ready."
         if essential_ready
