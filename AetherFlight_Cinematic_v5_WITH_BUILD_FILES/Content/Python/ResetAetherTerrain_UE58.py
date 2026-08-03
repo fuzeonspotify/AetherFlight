@@ -133,6 +133,36 @@ def destroy_terrain_actors() -> list[str]:
     return removed
 
 
+def disable_procedural_fallback() -> int:
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    changed = 0
+    for actor in actor_subsystem.get_all_level_actors():
+        if "proceduralworlddirector" not in class_name(actor).lower():
+            continue
+        updated = False
+        for property_name in (
+            "allow_runtime_placeholder_terrain",
+            "b_allow_runtime_placeholder_terrain",
+            "bAllowRuntimePlaceholderTerrain",
+        ):
+            try:
+                actor.set_editor_property(property_name, False)
+                updated = True
+                break
+            except Exception:
+                continue
+        if updated:
+            actor.modify()
+            changed += 1
+            log(f"Disabled procedural fallback terrain on {actor_label(actor)}")
+        else:
+            warn(
+                f"Could not resolve the fallback flag on {actor_label(actor)}; "
+                "the C++ class default remains false"
+            )
+    return changed
+
+
 def delete_asset_tree(package_path: str) -> list[str]:
     deleted = []
     try:
@@ -221,6 +251,7 @@ def main() -> None:
 
     load_aether_world()
     removed_actors = destroy_terrain_actors()
+    fallback_actors_updated = disable_procedural_fallback()
     save_world()
 
     try:
@@ -239,6 +270,7 @@ def main() -> None:
         f"Terrain actors deleted: {len(removed_actors)}\n"
         f"Mesh Terrain assets deleted: {len(deleted_mesh_assets)}\n"
         f"Legacy Landscape assets deleted: {len(deleted_landscape_assets)}\n"
+        f"Procedural fallback actors disabled: {fallback_actors_updated}\n"
         "Reusable source heightmaps, weightmaps, textures, aircraft, runway, HUD, "
         "weather, and water actors were preserved.\n"
     )
