@@ -268,9 +268,23 @@ void ACinematicFlightPawn::InputThrottle(const float Value)
     Throttle = FMath::Clamp(Throttle + Value * GetWorld()->GetDeltaSeconds() * 0.36f, 0.0f, 1.0f);
 }
 
-void ACinematicFlightPawn::InputPitch(const float Value) { PitchInput = FMath::Clamp(Value, -1.0f, 1.0f); }
-void ACinematicFlightPawn::InputRoll(const float Value) { RollInput = FMath::Clamp(Value, -1.0f, 1.0f); }
-void ACinematicFlightPawn::InputYaw(const float Value) { YawInput = FMath::Clamp(Value, -1.0f, 1.0f); }
+void ACinematicFlightPawn::InputPitch(const float Value)
+{
+    const float Direction = bInvertPitchControl ? -1.0f : 1.0f;
+    PitchInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
+
+void ACinematicFlightPawn::InputRoll(const float Value)
+{
+    const float Direction = bInvertRollControl ? -1.0f : 1.0f;
+    RollInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
+
+void ACinematicFlightPawn::InputYaw(const float Value)
+{
+    const float Direction = bInvertYawControl ? -1.0f : 1.0f;
+    YawInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
 
 void ACinematicFlightPawn::InputMouseX(const float Value)
 {
@@ -281,7 +295,8 @@ void ACinematicFlightPawn::InputMouseX(const float Value)
     }
     else
     {
-        MouseFlightX = FMath::Clamp(Value * 0.09f, -0.75f, 0.75f);
+        const float Direction = bInvertRollControl ? -1.0f : 1.0f;
+        MouseFlightX = FMath::Clamp(Value * 0.09f * Direction, -0.75f, 0.75f);
     }
 }
 
@@ -294,7 +309,8 @@ void ACinematicFlightPawn::InputMouseY(const float Value)
     }
     else
     {
-        MouseFlightY = FMath::Clamp(-Value * 0.08f, -0.7f, 0.7f);
+        const float Direction = bInvertPitchControl ? -1.0f : 1.0f;
+        MouseFlightY = FMath::Clamp(-Value * 0.08f * Direction, -0.7f, 0.7f);
     }
 }
 
