@@ -81,6 +81,8 @@ private:
     UHierarchicalInstancedStaticMeshComponent* CreateScatterComponent(
         const FName Name, int32 StartCullDistance, int32 EndCullDistance);
     UStaticMesh* LoadFirstAvailable(const TArray<FSoftObjectPath>& CandidatePaths) const;
+    TArray<UStaticMesh*> LoadLargestMeshesInPaths(
+        const TArray<FName>& PackagePaths, int32 MaxMeshes) const;
     bool FindLandscapeBounds(FBox2D& OutBounds) const;
     bool SampleLandscape(float X, float Y, float& OutHeightMeters, FVector& OutNormal) const;
     bool IsInsideRunwayClearance(float X, float Y) const;
