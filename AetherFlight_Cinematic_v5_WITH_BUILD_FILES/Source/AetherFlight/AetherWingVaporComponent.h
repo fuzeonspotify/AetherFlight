@@ -7,6 +7,7 @@
 class ACinematicFlightPawn;
 class UMaterialInterface;
 class UProceduralMeshComponent;
+struct FProcMeshTangent;
 
 struct FAetherVaporTrailSample
 {
@@ -68,7 +69,7 @@ private:
         TArray<FVector>& Normals,
         TArray<FVector2D>& UVs,
         TArray<FLinearColor>& Colors,
-        TArray<struct FProcMeshTangent>& Tangents) const;
+        TArray<FProcMeshTangent>& Tangents) const;
     float CalculateTargetIntensity() const;
     void ClearVisuals();
 
