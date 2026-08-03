@@ -91,6 +91,17 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Flight|Aero")
     float InducedDragFactor = 0.11f;
 
+    // Directional controls default to the player's preferred reversed layout.
+    // These remain editable on derived pawn defaults without changing throttle or free-look.
+    UPROPERTY(EditAnywhere, Category = "Flight|Controls")
+    bool bInvertPitchControl = true;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Controls")
+    bool bInvertRollControl = true;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Controls")
+    bool bInvertYawControl = true;
+
 private:
     void BuildFallbackAirframe();
     void LoadImportedAirframe();
