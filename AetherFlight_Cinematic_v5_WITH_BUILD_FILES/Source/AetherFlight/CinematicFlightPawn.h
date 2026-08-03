@@ -4,6 +4,7 @@
 #include "GameFramework/Pawn.h"
 #include "CinematicFlightPawn.generated.h"
 
+class UAetherWingVaporComponent;
 class UBoxComponent;
 class UCameraComponent;
 class UProceduralMeshComponent;
@@ -40,9 +41,13 @@ public:
     float GetMach() const;
     float GetThrottle() const { return Throttle; }
     float GetGForce() const { return SmoothedGForce; }
+    float GetAngleOfAttackDegrees() const;
     FString GetCameraModeName() const;
 
 protected:
+    UPROPERTY(VisibleAnywhere, Category = "Aircraft|Effects")
+    UAetherWingVaporComponent* WingVapor;
+
     UPROPERTY(VisibleAnywhere, Category = "Aircraft")
     UBoxComponent* PhysicsBody;
 
