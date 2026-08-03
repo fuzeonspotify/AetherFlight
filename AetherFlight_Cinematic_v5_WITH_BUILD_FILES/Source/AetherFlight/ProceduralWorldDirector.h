@@ -45,6 +45,7 @@ public:
     FTransform GetFlightSpawnTransform() const;
 
     FVector GetTurbulenceForce(const FVector& WorldLocation, float TimeSeconds, float MassKg) const;
+    float GetCondensationHumidity() const;
 
     static AProceduralWorldDirector* Find(UWorld* World);
 
