@@ -57,26 +57,41 @@ protected:
     UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
     UHierarchicalInstancedStaticMeshComponent* BoulderSecondary;
 
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* BoulderVariant3;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* BoulderVariant4;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* BoulderVariant5;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* BoulderVariant6;
+
+    UPROPERTY(VisibleAnywhere, Category = "Aether|Environment")
+    UHierarchicalInstancedStaticMeshComponent* BoulderVariant7;
+
     UPROPERTY(EditAnywhere, Category = "Aether|Environment")
     bool bEnableRuntimeScatter = true;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment", meta = (ClampMin = "1"))
     int32 EnvironmentSeed = 1847;
 
-    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "3000"))
-    int32 ForestClusterBudget = 850;
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "5000"))
+    int32 ForestClusterBudget = 2200;
 
-    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "1", ClampMax = "80"))
-    int32 TreesPerCluster = 34;
+    UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "1", ClampMax = "120"))
+    int32 TreesPerCluster = 58;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "50000"))
-    int32 ShrubInstanceBudget = 10000;
+    int32 ShrubInstanceBudget = 22000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Forest", meta = (ClampMin = "0", ClampMax = "60000"))
-    int32 GroundCoverInstanceBudget = 16000;
+    int32 GroundCoverInstanceBudget = 32000;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Environment|Rocks", meta = (ClampMin = "0", ClampMax = "20000"))
-    int32 RockInstanceBudget = 4200;
+    int32 RockInstanceBudget = 9000;
 
 private:
     UHierarchicalInstancedStaticMeshComponent* CreateScatterComponent(
@@ -84,6 +99,8 @@ private:
     UStaticMesh* LoadFirstAvailable(const TArray<FSoftObjectPath>& CandidatePaths) const;
     TArray<UStaticMesh*> LoadLargestMeshesInPaths(
         const TArray<FName>& PackagePaths, int32 MaxMeshes) const;
+    TArray<UHierarchicalInstancedStaticMeshComponent*> GetRockComponents() const;
+    int32 GetRockInstanceCount() const;
     bool FindLandscapeBounds(FBox2D& OutBounds) const;
     bool SampleLandscape(float X, float Y, float& OutHeightMeters, FVector& OutNormal) const;
     bool IsInsideRunwayClearance(float X, float Y) const;
