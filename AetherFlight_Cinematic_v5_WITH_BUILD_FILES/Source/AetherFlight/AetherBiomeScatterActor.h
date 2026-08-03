@@ -138,6 +138,7 @@ private:
     float HashNoise(int32 X, int32 Y) const;
 
     FTimerHandle ScatterBuildTimer;
+    FTimerHandle ScatterStreamTimer;
     FBox2D CachedLandscapeBounds;
     TSet<FIntPoint> GeneratedChunks;
     TSet<uint64> OccupiedTreeCells;
