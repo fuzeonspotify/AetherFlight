@@ -3,13 +3,14 @@
 This pass never deletes a Landscape. It chooses one authoritative production
 root, disables collision and game visibility on every legacy root/proxy, keeps
 the active World Partition proxies in one LOD group, and applies the production
-material. This prevents traces, foliage, and Nanite from using old terrain.
+material. It also clears the retired ProceduralWorldDirector terrain and its
+fallback foliage so nothing can render underneath the authored Landscape.
 """
 
 import unreal
 
 
-LOG = "[Aether Production World Repair v6]"
+LOG = "[Aether Production World Repair v7]"
 MATERIAL_PATH = "/Game/Aether/ProductionTerrain/M_Landscape_Production.M_Landscape_Production"
 EXPECTED_XY_SCALE = 1190.476190
 EXPECTED_Z_SCALE = 1093.75
@@ -89,6 +90,7 @@ def mark_active(actor, material):
     optional_property(actor, "lod0_screen_size", 0.62)
     optional_property(actor, "lod0_distribution_setting", 1.65)
     optional_property(actor, "lod_distribution_setting", 2.6)
+    optional_property(actor, "is_editor_only_actor", False)
     actor.modify()
 
 
@@ -103,7 +105,76 @@ def mark_legacy(actor):
     if LEGACY_TAG not in tags:
         tags.append(LEGACY_TAG)
     actor.tags = tags
+    # Reversible and non-destructive: the actor remains in the editor/map, but
+    # cannot reappear when a World Partition cell streams into PIE or a build.
+    optional_property(actor, "is_editor_only_actor", True)
     actor.modify()
+
+
+def disable_runtime_placeholders(actors):
+    disabled = []
+    for actor in actors:
+        actor_name = actor.get_name().lower()
+        actor_label = actor.get_actor_label().lower()
+        class_name = actor.get_class().get_name().lower()
+        is_world_director = (
+            "proceduralworlddirector" in actor_name
+            or "proceduralworlddirector" in actor_label
+            or "proceduralworlddirector" in class_name
+        )
+        if not is_world_director:
+            continue
+
+        try:
+            procedural_components = actor.get_components_by_class(
+                unreal.ProceduralMeshComponent
+            )
+        except Exception:
+            procedural_components = []
+        for component in procedural_components:
+            component_name = component.get_name().lower()
+            if "proceduralterrain" not in component_name:
+                continue
+            try:
+                component.clear_all_mesh_sections()
+            except Exception:
+                pass
+            try:
+                component.set_visibility(False, True)
+            except Exception:
+                pass
+            optional_property(component, "hidden_in_game", True)
+            try:
+                component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+            except Exception:
+                optional_property(component, "collision_enabled", unreal.CollisionEnabled.NO_COLLISION)
+            component.modify()
+            disabled.append(f"{actor.get_actor_label()}.{component.get_name()}")
+
+        # These are the old single-species fallback clusters. The production
+        # biome scatter actor owns foliage and rock instances now.
+        try:
+            instanced_components = actor.get_components_by_class(
+                unreal.HierarchicalInstancedStaticMeshComponent
+            )
+        except Exception:
+            instanced_components = []
+        for component in instanced_components:
+            component_name = component.get_name().lower()
+            if component_name not in ("proceduralforest", "proceduralrocks"):
+                continue
+            try:
+                component.clear_instances()
+            except Exception:
+                pass
+            try:
+                component.set_visibility(False, True)
+            except Exception:
+                pass
+            optional_property(component, "hidden_in_game", True)
+            component.modify()
+            disabled.append(f"{actor.get_actor_label()}.{component.get_name()}")
+    return disabled
 
 
 def main():
@@ -121,6 +192,7 @@ def main():
 
     actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     actors = actor_subsystem.get_all_level_actors()
+    placeholders = disable_runtime_placeholders(actors)
     proxies = [actor for actor in actors if isinstance(actor, unreal.LandscapeProxy)]
     roots = [actor for actor in proxies if actor.get_class().get_name() == "Landscape"]
     if not roots:
@@ -171,11 +243,13 @@ def main():
         f"Active Landscape proxies: {len(active)}\n"
         f"Legacy proxies disabled (not deleted): {len(legacy)}\n"
         f"Legacy labels: {legacy_labels}\n\n{warning_text}\n\n"
-        "If a rectangular wall is still visible, temporarily uncheck Enable Nanite on the selected Landscape, then rebuild Landscape data."
+        f"Runtime placeholder components cleared: {len(placeholders)}\n\n"
+        "The legacy roots are now editor-only, so their late-streamed World Partition proxies cannot overlap PIE. "
+        "Rebuild the C++ module before testing so the runtime guard is active."
     )
     log(message.replace("\n", " | "))
     unreal.EditorDialog.show_message(
-        "Aether Production World Repair v6", message, unreal.AppMsgType.OK
+        "Aether Production World Repair v7", message, unreal.AppMsgType.OK
     )
 
 
