@@ -8,6 +8,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "LandscapeProxy.h"
 #include "Modules/ModuleManager.h"
 #include "TimerManager.h"
@@ -19,7 +21,7 @@ namespace AetherEnvironment
     constexpr float DefaultHalfWorldCm = 2400000.0f;
     constexpr float LandscapeBorderCm = 12000.0f;
     constexpr float TreeCellSizeCm = 1900.0f;
-    constexpr float RockCellSizeCm = 2600.0f;
+    constexpr float RockCellSizeCm = 6500.0f;
     constexpr float InitialBuildDelaySeconds = 2.0f;
     constexpr float RetryBuildDelaySeconds = 2.0f;
     constexpr int32 MaxBuildAttempts = 6;
@@ -42,21 +44,22 @@ AAetherBiomeScatterActor::AAetherBiomeScatterActor()
     Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(Root);
 
-    ConiferPrimary = CreateScatterComponent(TEXT("ConiferPrimary"), 2400000, 6000000);
-    ConiferSecondary = CreateScatterComponent(TEXT("ConiferSecondary"), 2400000, 6000000);
-    BroadleafTrees = CreateScatterComponent(TEXT("BroadleafTrees"), 1900000, 4800000);
-    CorkOakTrees = CreateScatterComponent(TEXT("CorkOakTrees"), 1900000, 4800000);
-    WindmillPalms = CreateScatterComponent(TEXT("WindmillPalms"), 1900000, 4800000);
-    CoconutPalms = CreateScatterComponent(TEXT("CoconutPalms"), 1900000, 4800000);
-    Shrubs = CreateScatterComponent(TEXT("Shrubs"), 260000, 850000);
-    GroundCover = CreateScatterComponent(TEXT("GroundCover"), 90000, 350000);
-    BoulderPrimary = CreateScatterComponent(TEXT("BoulderPrimary"), 1200000, 4200000);
-    BoulderSecondary = CreateScatterComponent(TEXT("BoulderSecondary"), 1400000, 4800000);
-    BoulderVariant3 = CreateScatterComponent(TEXT("BoulderVariant3"), 1200000, 4200000);
-    BoulderVariant4 = CreateScatterComponent(TEXT("BoulderVariant4"), 1200000, 4200000);
-    BoulderVariant5 = CreateScatterComponent(TEXT("BoulderVariant5"), 1200000, 4200000);
-    BoulderVariant6 = CreateScatterComponent(TEXT("BoulderVariant6"), 1200000, 4200000);
-    BoulderVariant7 = CreateScatterComponent(TEXT("BoulderVariant7"), 1200000, 4200000);
+    ConiferPrimary = CreateScatterComponent(TEXT("ConiferPrimary"), 450000, 1600000);
+    ConiferSecondary = CreateScatterComponent(TEXT("ConiferSecondary"), 450000, 1600000);
+    BroadleafTrees = CreateScatterComponent(TEXT("BroadleafTrees"), 400000, 1450000);
+    CorkOakTrees = CreateScatterComponent(TEXT("CorkOakTrees"), 400000, 1450000);
+    WindmillPalms = CreateScatterComponent(TEXT("WindmillPalms"), 350000, 1300000);
+    CoconutPalms = CreateScatterComponent(TEXT("CoconutPalms"), 350000, 1300000);
+    Shrubs = CreateScatterComponent(TEXT("Shrubs"), 70000, 320000);
+    GroundCover = CreateScatterComponent(TEXT("GroundCover"), 35000, 160000);
+    GroundCover->SetCastShadow(false);
+    BoulderPrimary = CreateScatterComponent(TEXT("BoulderPrimary"), 260000, 950000);
+    BoulderSecondary = CreateScatterComponent(TEXT("BoulderSecondary"), 300000, 1100000);
+    BoulderVariant3 = CreateScatterComponent(TEXT("BoulderVariant3"), 240000, 900000);
+    BoulderVariant4 = CreateScatterComponent(TEXT("BoulderVariant4"), 240000, 900000);
+    BoulderVariant5 = CreateScatterComponent(TEXT("BoulderVariant5"), 240000, 900000);
+    BoulderVariant6 = CreateScatterComponent(TEXT("BoulderVariant6"), 240000, 900000);
+    BoulderVariant7 = CreateScatterComponent(TEXT("BoulderVariant7"), 240000, 900000);
 }
 
 void AAetherBiomeScatterActor::BeginPlay()
@@ -86,6 +89,7 @@ UHierarchicalInstancedStaticMeshComponent* AAetherBiomeScatterActor::CreateScatt
     Component->SetCanEverAffectNavigation(false);
     Component->SetCullDistances(StartCullDistance, EndCullDistance);
     Component->SetMobility(EComponentMobility::Movable);
+    Component->bEnableDensityScaling = true;
     Component->bCastDynamicShadow = true;
     Component->bAffectDistanceFieldLighting = true;
     return Component;
@@ -149,7 +153,14 @@ void AAetherBiomeScatterActor::ClearEnvironment()
     {
         RockComponent->ClearInstances();
     }
+    GeneratedChunks.Reset();
+    OccupiedTreeCells.Reset();
+    OccupiedSoloRockCells.Reset();
+    OccupiedFormationRockCells.Reset();
+    CachedLandscapeBounds = FBox2D();
     BuildAttempt = 0;
+    StreamUpdateCount = 0;
+    bLandscapeBoundsReady = false;
     bBuilt = false;
 }
 
@@ -201,6 +212,52 @@ TArray<UStaticMesh*> AAetherBiomeScatterActor::LoadLargestMeshesInPaths(
         Meshes.SetNum(MaxMeshes);
     }
     return Meshes;
+}
+
+UStaticMesh* AAetherBiomeScatterActor::LoadFirstMeshMatchingKeywords(
+    const TArray<FName>& PackagePaths, const TArray<FString>& Keywords) const
+{
+    if (PackagePaths.Num() == 0 || Keywords.Num() == 0)
+    {
+        return nullptr;
+    }
+
+    FAssetRegistryModule& AssetRegistryModule =
+        FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+    FARFilter Filter;
+    Filter.PackagePaths.Append(PackagePaths);
+    Filter.ClassPaths.Add(UStaticMesh::StaticClass()->GetClassPathName());
+    Filter.bRecursivePaths = true;
+
+    TArray<FAssetData> Assets;
+    AssetRegistryModule.Get().GetAssets(Filter, Assets);
+    Assets.Sort([](const FAssetData& Left, const FAssetData& Right)
+    {
+        return Left.AssetName.ToString() < Right.AssetName.ToString();
+    });
+
+    for (const FAssetData& Asset : Assets)
+    {
+        const FString AssetName = Asset.AssetName.ToString();
+        bool bMatches = false;
+        for (const FString& Keyword : Keywords)
+        {
+            if (AssetName.Contains(Keyword, ESearchCase::IgnoreCase))
+            {
+                bMatches = true;
+                break;
+            }
+        }
+
+        if (bMatches)
+        {
+            if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset()))
+            {
+                return Mesh;
+            }
+        }
+    }
+    return nullptr;
 }
 
 void AAetherBiomeScatterActor::BuildEnvironment()
@@ -270,6 +327,24 @@ void AAetherBiomeScatterActor::BuildEnvironment()
     const TArray<UStaticMesh*> CoconutPalmMeshes = LoadLargestMeshesInPaths({
         FName(TEXT("/Game/DZ_Assets/DZ_Trees/Meshes/Coconut_Tree"))
     }, 1);
+
+    // Automatically use installed high-quality plant meshes when explicit
+    // Aether aliases have not been created.
+    if (!Shrub)
+    {
+        Shrub = LoadFirstMeshMatchingKeywords({
+            FName(TEXT("/Game/Aether/Environment/Foliage")),
+            FName(TEXT("/Game/DZ_Assets"))
+        }, { TEXT("shrub"), TEXT("bush"), TEXT("sapling") });
+    }
+    if (!Cover)
+    {
+        Cover = LoadFirstMeshMatchingKeywords({
+            FName(TEXT("/Game/Aether/Environment/Foliage")),
+            FName(TEXT("/Game/DZ_Assets"))
+        }, { TEXT("fern"), TEXT("groundcover"), TEXT("ground_cover"), TEXT("grass"), TEXT("flower") });
+    }
+
     const TArray<UStaticMesh*> RockMeshes = LoadLargestMeshesInPaths({
         FName(TEXT("/Game/Aether/Environment/Rocks")),
         FName(TEXT("/Game/Rocks")),
@@ -338,47 +413,48 @@ void AAetherBiomeScatterActor::BuildEnvironment()
             FVector2D(AetherEnvironment::DefaultHalfWorldCm));
     }
 
+    // A partially streamed Landscape can report only one proxy at startup.
+    // Preserve the known production-world extent so chunks across the entire
+    // 4033 landscape become eligible as the aircraft approaches them.
+    const float MinimumExpectedSize = AetherEnvironment::DefaultHalfWorldCm * 1.5f;
+    if (Bounds.GetSize().X < MinimumExpectedSize || Bounds.GetSize().Y < MinimumExpectedSize)
+    {
+        Bounds.Min.X = FMath::Min(Bounds.Min.X, -AetherEnvironment::DefaultHalfWorldCm);
+        Bounds.Min.Y = FMath::Min(Bounds.Min.Y, -AetherEnvironment::DefaultHalfWorldCm);
+        Bounds.Max.X = FMath::Max(Bounds.Max.X, AetherEnvironment::DefaultHalfWorldCm);
+        Bounds.Max.Y = FMath::Max(Bounds.Max.Y, AetherEnvironment::DefaultHalfWorldCm);
+    }
+
     Bounds.Min += FVector2D(AetherEnvironment::LandscapeBorderCm);
     Bounds.Max -= FVector2D(AetherEnvironment::LandscapeBorderCm);
-    FRandomStream Random(EnvironmentSeed * 104729 + 37);
-    GenerateForest(Bounds, Random);
-    GenerateRocks(Bounds, Random);
-    DisableLegacyScatterIfReplaced();
-
-    const int32 TreeCount = GetTreeInstanceCount();
-    const int32 UnderstoryCount = Shrubs->GetInstanceCount() + GroundCover->GetInstanceCount();
-    const int32 RockCount = GetRockInstanceCount();
-    if (TreeCount == 0 && RockCount == 0 && BuildAttempt < AetherEnvironment::MaxBuildAttempts)
+    if (Bounds.Min.X >= Bounds.Max.X || Bounds.Min.Y >= Bounds.Max.Y)
     {
-        UE_LOG(LogTemp, Display,
-            TEXT("[Aether] Landscape streaming is not ready; retrying ecosystem build (%d/%d)."),
-            BuildAttempt, AetherEnvironment::MaxBuildAttempts);
-        GetWorldTimerManager().SetTimer(
-            ScatterBuildTimer,
-            this,
-            &AAetherBiomeScatterActor::BuildEnvironment,
-            AetherEnvironment::RetryBuildDelaySeconds,
-            false);
+        UE_LOG(LogTemp, Warning, TEXT("[Aether] Invalid production Landscape bounds; ecosystem streaming was not started."));
         return;
     }
 
+    CachedLandscapeBounds = Bounds;
+    bLandscapeBoundsReady = true;
     bBuilt = true;
+
+    StreamEnvironmentAroundPlayer();
+    GetWorldTimerManager().SetTimer(
+        ScatterBuildTimer,
+        this,
+        &AAetherBiomeScatterActor::StreamEnvironmentAroundPlayer,
+        StreamingUpdateSeconds,
+        true);
+
     UE_LOG(LogTemp, Display,
-        TEXT("[Aether] Ecosystem built: %d trees (%d pine A, %d pine B, %d aspen, %d cork oak, %d windmill palm, %d coconut), %d understory plants, %d rocks."),
-        TreeCount,
-        ConiferPrimary->GetInstanceCount(),
-        ConiferSecondary->GetInstanceCount(),
-        BroadleafTrees->GetInstanceCount(),
-        CorkOakTrees->GetInstanceCount(),
-        WindmillPalms->GetInstanceCount(),
-        CoconutPalms->GetInstanceCount(),
-        UnderstoryCount,
-        RockCount);
+        TEXT("[Aether] Ecosystem streaming initialized across %.1f x %.1f km; %d tree and %d rock maximum."),
+        Bounds.GetSize().X * 0.00001f,
+        Bounds.GetSize().Y * 0.00001f,
+        TreeInstanceBudget,
+        RockInstanceBudget);
 }
 
 bool AAetherBiomeScatterActor::FindLandscapeBounds(FBox2D& OutBounds) const
 {
-    double LargestArea = 0.0;
     bool bFound = false;
     for (TActorIterator<ALandscapeProxy> It(GetWorld()); It; ++It)
     {
@@ -392,13 +468,21 @@ bool AAetherBiomeScatterActor::FindLandscapeBounds(FBox2D& OutBounds) const
         {
             continue;
         }
-        const double Area = static_cast<double>(Box.GetSize().X) * static_cast<double>(Box.GetSize().Y);
-        if (Area > LargestArea)
+
+        const FBox2D ProxyBounds(
+            FVector2D(Box.Min.X, Box.Min.Y),
+            FVector2D(Box.Max.X, Box.Max.Y));
+        if (!bFound)
         {
-            LargestArea = Area;
-            OutBounds = FBox2D(
-                FVector2D(Box.Min.X, Box.Min.Y), FVector2D(Box.Max.X, Box.Max.Y));
+            OutBounds = ProxyBounds;
             bFound = true;
+        }
+        else
+        {
+            OutBounds.Min.X = FMath::Min(OutBounds.Min.X, ProxyBounds.Min.X);
+            OutBounds.Min.Y = FMath::Min(OutBounds.Min.Y, ProxyBounds.Min.Y);
+            OutBounds.Max.X = FMath::Max(OutBounds.Max.X, ProxyBounds.Max.X);
+            OutBounds.Max.Y = FMath::Max(OutBounds.Max.Y, ProxyBounds.Max.Y);
         }
     }
     return bFound;
@@ -463,10 +547,20 @@ void AAetherBiomeScatterActor::GenerateForest(const FBox2D& Bounds, FRandomStrea
     // Uniform candidates plus minimum spacing prevent the circular megaclusters
     // produced by the old algorithm. Low-frequency noise only changes density,
     // leaving gradual biome transitions and natural open clearings.
-    TSet<uint64> OccupiedTreeCells;
-    const int32 Attempts = TreeInstanceBudget * 8;
-    int32 AcceptedTrees = GetTreeInstanceCount();
-    for (int32 Attempt = 0; Attempt < Attempts && AcceptedTrees < TreeInstanceBudget; ++Attempt)
+    const FVector2D FullSize = CachedLandscapeBounds.GetSize();
+    const FVector2D LocalSize = Bounds.GetSize();
+    const double FullArea = FMath::Max(
+        1.0, static_cast<double>(FullSize.X) * static_cast<double>(FullSize.Y));
+    const double LocalArea = FMath::Max(
+        1.0, static_cast<double>(LocalSize.X) * static_cast<double>(LocalSize.Y));
+    const int32 LocalBudget = FMath::Clamp(
+        FMath::RoundToInt(TreeInstanceBudget * LocalArea / FullArea),
+        12, 1200);
+    const int32 StartCount = GetTreeInstanceCount();
+    const int32 TargetCount = FMath::Min(TreeInstanceBudget, StartCount + LocalBudget);
+    const int32 Attempts = LocalBudget * 14;
+    int32 AcceptedTrees = StartCount;
+    for (int32 Attempt = 0; Attempt < Attempts && AcceptedTrees < TargetCount; ++Attempt)
     {
         const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
         const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
@@ -635,7 +729,7 @@ bool AAetherBiomeScatterActor::TryAddTree(
 void AAetherBiomeScatterActor::TryAddUnderstory(
     const float X, const float Y, FRandomStream& Random)
 {
-    if (Shrubs->GetStaticMesh() && Shrubs->GetInstanceCount() < ShrubInstanceBudget && Random.FRand() < 0.52f)
+    if (Shrubs->GetStaticMesh() && Shrubs->GetInstanceCount() < ShrubInstanceBudget && Random.FRand() < 0.18f)
     {
         const float OffsetAngle = Random.FRandRange(0.0f, 2.0f * PI);
         const float OffsetDistance = Random.FRandRange(350.0f, 2100.0f);
@@ -653,7 +747,7 @@ void AAetherBiomeScatterActor::TryAddUnderstory(
     }
 
     if (GroundCover->GetStaticMesh() && GroundCover->GetInstanceCount() < GroundCoverInstanceBudget
-        && Random.FRand() < 0.72f)
+        && Random.FRand() < 0.28f)
     {
         const float OffsetAngle = Random.FRandRange(0.0f, 2.0f * PI);
         const float OffsetDistance = Random.FRandRange(180.0f, 1250.0f);
@@ -686,15 +780,26 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
         return;
     }
 
-    TSet<uint64> OccupiedSoloCells;
-    TSet<uint64> OccupiedFormationCells;
-    TSet<uint64> FormationCenterCells;
+    const FVector2D FullSize = CachedLandscapeBounds.GetSize();
+    const FVector2D LocalSize = Bounds.GetSize();
+    const double FullArea = FMath::Max(
+        1.0, static_cast<double>(FullSize.X) * static_cast<double>(FullSize.Y));
+    const double LocalArea = FMath::Max(
+        1.0, static_cast<double>(LocalSize.X) * static_cast<double>(LocalSize.Y));
+    const int32 LocalBudget = FMath::Clamp(
+        FMath::RoundToInt(RockInstanceBudget * LocalArea / FullArea),
+        2, 32);
     int32 RockCount = GetRockInstanceCount();
+    const int32 LocalTargetCount = FMath::Min(RockInstanceBudget, RockCount + LocalBudget);
+    if (RockCount >= LocalTargetCount)
+    {
+        return;
+    }
 
     auto TryPlaceRock = [&](const float X, const float Y, const float MinScale,
                             const float MaxScale, const bool bFormationRock) -> bool
     {
-        if (RockCount >= RockInstanceBudget || IsInsideRunwayClearance(X, Y))
+        if (RockCount >= LocalTargetCount || IsInsideRunwayClearance(X, Y))
         {
             return false;
         }
@@ -717,17 +822,18 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
         if (!bFormationRock)
         {
             const float Density = FMath::Clamp(
-                0.09f + Slope * 1.55f + Exposure * 0.22f + Outcrop * 0.28f,
-                0.10f, 0.88f);
+                0.04f + Slope * 1.05f + Exposure * 0.14f + Outcrop * 0.16f,
+                0.06f, 0.58f);
             if (Random.FRand() > Density)
             {
                 return false;
             }
         }
 
-        TSet<uint64>& OccupiedCells = bFormationRock ? OccupiedFormationCells : OccupiedSoloCells;
+        TSet<uint64>& OccupiedCells =
+            bFormationRock ? OccupiedFormationRockCells : OccupiedSoloRockCells;
         const float CellSize = bFormationRock
-            ? AetherEnvironment::RockCellSizeCm * 0.30f
+            ? AetherEnvironment::RockCellSizeCm * 0.28f
             : AetherEnvironment::RockCellSizeCm;
         if (!ReserveCell(OccupiedCells, X, Y, CellSize))
         {
@@ -737,16 +843,17 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
         UHierarchicalInstancedStaticMeshComponent* Target = AvailableRockComponents[
             Random.RandRange(0, AvailableRockComponents.Num() - 1)];
         const float BaseScale = Random.FRandRange(MinScale, MaxScale);
-        FVector Scale(
-            BaseScale * Random.FRandRange(0.72f, 1.36f),
-            BaseScale * Random.FRandRange(0.72f, 1.32f),
-            BaseScale * Random.FRandRange(0.62f, 1.24f));
+        const FVector Scale(
+            BaseScale * Random.FRandRange(0.78f, 1.28f),
+            BaseScale * Random.FRandRange(0.78f, 1.25f),
+            BaseScale * Random.FRandRange(0.68f, 1.18f));
 
         FRotator Rotation = FRotationMatrix::MakeFromZ(Normal).Rotator();
         Rotation.Yaw += Random.FRandRange(-180.0f, 180.0f);
-        Rotation.Pitch += Random.FRandRange(-6.0f, 6.0f);
-        Rotation.Roll += Random.FRandRange(-6.0f, 6.0f);
-        const float BuryDepth = FMath::Lerp(8.0f, 150.0f, FMath::Clamp(BaseScale / 7.0f, 0.0f, 1.0f));
+        Rotation.Pitch += Random.FRandRange(-5.0f, 5.0f);
+        Rotation.Roll += Random.FRandRange(-5.0f, 5.0f);
+        const float BuryDepth = FMath::Lerp(
+            8.0f, 130.0f, FMath::Clamp(BaseScale / 6.5f, 0.0f, 1.0f));
         Target->AddInstance(FTransform(
             Rotation,
             FVector(X, Y, HeightMeters * 100.0f - Random.FRandRange(BuryDepth * 0.45f, BuryDepth)),
@@ -755,71 +862,187 @@ void AAetherBiomeScatterActor::GenerateRocks(const FBox2D& Bounds, FRandomStream
         return true;
     };
 
-    // Most rocks are evenly dispersed singles. The size distribution strongly
-    // favors small stones but still produces boulders and rare landmarks.
-    const int32 SoloTarget = FMath::RoundToInt(RockInstanceBudget * 0.82f);
-    const int32 SoloAttempts = RockInstanceBudget * 12;
-    for (int32 Attempt = 0; Attempt < SoloAttempts && RockCount < SoloTarget; ++Attempt)
+    // Only a minority of chunks contain a formation. Each formation has one
+    // dominant rock and a few satellites, preventing wall-to-wall boulders.
+    if (LocalBudget >= 4 && Random.FRand() < 0.16f)
     {
-        const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
-        const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
-        const float SizeRoll = Random.FRand();
-        if (SizeRoll < 0.52f)
+        for (int32 FormationAttempt = 0; FormationAttempt < 12 && RockCount < LocalTargetCount; ++FormationAttempt)
         {
-            TryPlaceRock(X, Y, 0.20f, 0.72f, false);
-        }
-        else if (SizeRoll < 0.86f)
-        {
-            TryPlaceRock(X, Y, 0.70f, 1.75f, false);
-        }
-        else if (SizeRoll < 0.975f)
-        {
-            TryPlaceRock(X, Y, 1.70f, 4.20f, false);
-        }
-        else
-        {
-            TryPlaceRock(X, Y, 4.50f, 8.50f, false);
-        }
-    }
-
-    // Widely separated formations have one dominant boulder surrounded by
-    // irregular satellites. They read as geological features, not asset patches.
-    const int32 FormationTarget = FMath::Clamp(RockInstanceBudget / 70, 18, 140);
-    int32 FormationsPlaced = 0;
-    for (int32 Attempt = 0; Attempt < FormationTarget * 12
-        && FormationsPlaced < FormationTarget && RockCount < RockInstanceBudget; ++Attempt)
-    {
-        const float CenterX = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
-        const float CenterY = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
-        if (!ReserveCell(FormationCenterCells, CenterX, CenterY, 32000.0f)
-            || !TryPlaceRock(CenterX, CenterY, 2.40f, 6.80f, true))
-        {
-            continue;
-        }
-
-        ++FormationsPlaced;
-        const int32 SatelliteCount = Random.RandRange(3, 9);
-        const float FormationRadius = Random.FRandRange(1400.0f, 9200.0f);
-        for (int32 Satellite = 0; Satellite < SatelliteCount && RockCount < RockInstanceBudget; ++Satellite)
-        {
-            const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
-            const float Distance = FMath::Sqrt(Random.FRand()) * FormationRadius;
-            const float RockX = CenterX + FMath::Cos(Angle) * Distance;
-            const float RockY = CenterY + FMath::Sin(Angle) * Distance;
-            if (RockX <= Bounds.Min.X || RockX >= Bounds.Max.X
-                || RockY <= Bounds.Min.Y || RockY >= Bounds.Max.Y)
+            const float CenterX = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
+            const float CenterY = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
+            if (!TryPlaceRock(CenterX, CenterY, 1.80f, 4.80f, true))
             {
                 continue;
             }
 
-            if (Random.FRand() < 0.70f)
+            const int32 SatelliteCount = FMath::Min(
+                Random.RandRange(2, 5), LocalTargetCount - RockCount);
+            const float Radius = Random.FRandRange(1800.0f, 7600.0f);
+            for (int32 Satellite = 0; Satellite < SatelliteCount; ++Satellite)
             {
-                TryPlaceRock(RockX, RockY, 0.24f, 1.35f, true);
+                const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
+                const float Distance = FMath::Sqrt(Random.FRand()) * Radius;
+                TryPlaceRock(
+                    CenterX + FMath::Cos(Angle) * Distance,
+                    CenterY + FMath::Sin(Angle) * Distance,
+                    0.22f,
+                    Random.FRand() < 0.78f ? 1.10f : 2.20f,
+                    true);
             }
-            else
+            break;
+        }
+    }
+
+    const int32 Attempts = LocalBudget * 36;
+    for (int32 Attempt = 0; Attempt < Attempts && RockCount < LocalTargetCount; ++Attempt)
+    {
+        const float X = Random.FRandRange(Bounds.Min.X, Bounds.Max.X);
+        const float Y = Random.FRandRange(Bounds.Min.Y, Bounds.Max.Y);
+        const float SizeRoll = Random.FRand();
+        if (SizeRoll < 0.64f)
+        {
+            TryPlaceRock(X, Y, 0.18f, 0.58f, false);
+        }
+        else if (SizeRoll < 0.92f)
+        {
+            TryPlaceRock(X, Y, 0.58f, 1.35f, false);
+        }
+        else if (SizeRoll < 0.992f)
+        {
+            TryPlaceRock(X, Y, 1.35f, 3.10f, false);
+        }
+        else
+        {
+            TryPlaceRock(X, Y, 3.40f, 6.40f, false);
+        }
+    }
+}
+
+bool AAetherBiomeScatterActor::IsChunkLandscapeReady(const FBox2D& Bounds) const
+{
+    const FVector2D Size = Bounds.GetSize();
+    const FVector2D Inset = Size * 0.18f;
+    const TArray<FVector2D> ProbePoints = {
+        Bounds.GetCenter(),
+        Bounds.Min + Inset,
+        FVector2D(Bounds.Max.X - Inset.X, Bounds.Min.Y + Inset.Y),
+        Bounds.Max - Inset,
+        FVector2D(Bounds.Min.X + Inset.X, Bounds.Max.Y - Inset.Y)
+    };
+
+    int32 SuccessfulProbes = 0;
+    for (const FVector2D& Point : ProbePoints)
+    {
+        float HeightMeters = 0.0f;
+        FVector Normal = FVector::UpVector;
+        if (SampleLandscape(Point.X, Point.Y, HeightMeters, Normal))
+        {
+            ++SuccessfulProbes;
+        }
+    }
+    return SuccessfulProbes >= 3;
+}
+
+void AAetherBiomeScatterActor::StreamEnvironmentAroundPlayer()
+{
+    if (!bBuilt || !bLandscapeBoundsReady || !GetWorld())
+    {
+        return;
+    }
+
+    FVector FocusLocation = GetActorLocation();
+    if (const APlayerController* PlayerController = GetWorld()->GetFirstPlayerController())
+    {
+        if (const APawn* PlayerPawn = PlayerController->GetPawn())
+        {
+            FocusLocation = PlayerPawn->GetActorLocation();
+        }
+    }
+
+    const float ChunkSize = FMath::Max(100000.0f, EcosystemChunkSizeCm);
+    const FIntPoint CenterChunk(
+        FMath::FloorToInt(FocusLocation.X / ChunkSize),
+        FMath::FloorToInt(FocusLocation.Y / ChunkSize));
+
+    TArray<FIntPoint> PendingChunks;
+    const int32 Radius = FMath::Max(1, StreamingRadiusInChunks);
+    for (int32 OffsetY = -Radius; OffsetY <= Radius; ++OffsetY)
+    {
+        for (int32 OffsetX = -Radius; OffsetX <= Radius; ++OffsetX)
+        {
+            if (OffsetX * OffsetX + OffsetY * OffsetY > Radius * Radius)
             {
-                TryPlaceRock(RockX, RockY, 1.20f, 3.20f, true);
+                continue;
             }
+
+            const FIntPoint Chunk(CenterChunk.X + OffsetX, CenterChunk.Y + OffsetY);
+            if (!GeneratedChunks.Contains(Chunk))
+            {
+                PendingChunks.Add(Chunk);
+            }
+        }
+    }
+
+    PendingChunks.Sort([CenterChunk](const FIntPoint& Left, const FIntPoint& Right)
+    {
+        const int32 LeftX = Left.X - CenterChunk.X;
+        const int32 LeftY = Left.Y - CenterChunk.Y;
+        const int32 RightX = Right.X - CenterChunk.X;
+        const int32 RightY = Right.Y - CenterChunk.Y;
+        return LeftX * LeftX + LeftY * LeftY < RightX * RightX + RightY * RightY;
+    });
+
+    const int32 ChunkLimit = GeneratedChunks.Num() == 0
+        ? FMath::Max(MaxNewChunksPerUpdate, 16)
+        : FMath::Max(1, MaxNewChunksPerUpdate);
+    int32 NewChunks = 0;
+    for (const FIntPoint& Chunk : PendingChunks)
+    {
+        FBox2D ChunkBounds(
+            FVector2D(Chunk.X * ChunkSize, Chunk.Y * ChunkSize),
+            FVector2D((Chunk.X + 1) * ChunkSize, (Chunk.Y + 1) * ChunkSize));
+        ChunkBounds.Min.X = FMath::Max(ChunkBounds.Min.X, CachedLandscapeBounds.Min.X);
+        ChunkBounds.Min.Y = FMath::Max(ChunkBounds.Min.Y, CachedLandscapeBounds.Min.Y);
+        ChunkBounds.Max.X = FMath::Min(ChunkBounds.Max.X, CachedLandscapeBounds.Max.X);
+        ChunkBounds.Max.Y = FMath::Min(ChunkBounds.Max.Y, CachedLandscapeBounds.Max.Y);
+        if (ChunkBounds.Min.X >= ChunkBounds.Max.X || ChunkBounds.Min.Y >= ChunkBounds.Max.Y)
+        {
+            GeneratedChunks.Add(Chunk);
+            continue;
+        }
+
+        if (!IsChunkLandscapeReady(ChunkBounds))
+        {
+            continue;
+        }
+
+        const uint32 ChunkHash =
+            static_cast<uint32>(Chunk.X) * 73856093u
+            ^ static_cast<uint32>(Chunk.Y) * 19349663u
+            ^ static_cast<uint32>(EnvironmentSeed) * 83492791u;
+        FRandomStream ChunkRandom(static_cast<int32>(ChunkHash));
+        GenerateForest(ChunkBounds, ChunkRandom);
+        GenerateRocks(ChunkBounds, ChunkRandom);
+        GeneratedChunks.Add(Chunk);
+        ++NewChunks;
+        if (NewChunks >= ChunkLimit)
+        {
+            break;
+        }
+    }
+
+    ++StreamUpdateCount;
+    if (NewChunks > 0)
+    {
+        DisableLegacyScatterIfReplaced();
+        if (GeneratedChunks.Num() <= NewChunks || StreamUpdateCount % 12 == 0)
+        {
+            UE_LOG(LogTemp, Display,
+                TEXT("[Aether] Streamed %d ecosystem chunks: %d trees, %d foliage plants, %d rocks resident."),
+                GeneratedChunks.Num(),
+                GetTreeInstanceCount(),
+                Shrubs->GetInstanceCount() + GroundCover->GetInstanceCount(),
+                GetRockInstanceCount());
         }
     }
 }
