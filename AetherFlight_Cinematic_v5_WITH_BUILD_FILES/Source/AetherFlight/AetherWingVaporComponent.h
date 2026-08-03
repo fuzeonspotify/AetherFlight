@@ -21,7 +21,9 @@ struct FAetherVaporTrailSample
 
 /**
  * Aerodynamic condensation for high-load manoeuvres.
- * Builds layered pressure-vapour volumes over the wings and soft multi-plane wingtip vortices.
+ * Builds a thin pressure-vapour envelope over the wings and world-space,
+ * rolling wingtip vortex tubes. The trail history stays behind the aircraft
+ * instead of appearing as camera-facing ribbons attached to it.
  */
 UCLASS(ClassGroup = (Aether), meta = (BlueprintSpawnableComponent))
 class AETHERFLIGHT_API UAetherWingVaporComponent : public UActorComponent
@@ -54,16 +56,15 @@ protected:
     float WingTipOffsetCentimeters = 835.0f;
 
     UPROPERTY(EditAnywhere, Category = "Aether|Condensation", meta = (ClampMin = "0.5", ClampMax = "5.0"))
-    float TrailLifetimeSeconds = 1.55f;
+    float TrailLifetimeSeconds = 1.18f;
 
 private:
     UProceduralMeshComponent* CreateEffectMesh(FName Name);
     void BuildWingSheet(UProceduralMeshComponent* Mesh, float SideSign, float Intensity, float TimeSeconds);
     void UpdateTrailSamples(float DeltaTime, float Intensity);
     void BuildWingtipTrails();
-    void AppendTrailRibbon(
+    void AppendTrailTube(
         bool bLeft,
-        float PlaneAngleRadians,
         TArray<FVector>& Vertices,
         TArray<int32>& Triangles,
         TArray<FVector>& Normals,
