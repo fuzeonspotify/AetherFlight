@@ -12,6 +12,7 @@ public class AetherFlight : ModuleRules
             "CoreUObject",
             "Engine",
             "InputCore",
+            "AudioMixer",
             "Landscape",
             "ProceduralMeshComponent",
             "AssetRegistry"
