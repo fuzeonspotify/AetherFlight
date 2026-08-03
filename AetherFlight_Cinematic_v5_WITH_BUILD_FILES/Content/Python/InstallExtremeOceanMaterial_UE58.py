@@ -139,9 +139,9 @@ def sum_nodes(material, nodes, x: int, y: int, name: str):
     return result
 
 
-def make_wave(material, world_xy, game_time, sea_state, spec, row: int):
-    """Return height, dHeight/dX, dHeight/dY for one sinusoidal wave band."""
-    wavelength, amplitude, speed, direction_x, direction_y = spec
+def make_wave(material, world_xy, game_time, sea_state, choppiness, spec, row: int):
+    """Return Gerstner-style height, slope and horizontal orbital displacement."""
+    wavelength, amplitude, speed, direction_x, direction_y, steepness = spec
     direction_length = math.sqrt(direction_x * direction_x + direction_y * direction_y)
     direction_x /= direction_length
     direction_y /= direction_length
@@ -187,7 +187,21 @@ def make_wave(material, world_xy, game_time, sea_state, spec, row: int):
         material, tau_slope, scalar(material, inv_y, -1200, y + 225),
         -1000, y + 120, f"wave {row} dY"
     )
-    return height, dx, dy
+    chopped_amplitude = multiply(
+        material, cosine_amplitude, choppiness, -1000, y + 210,
+        f"wave {row} orbital motion"
+    )
+    offset_x = multiply(
+        material, chopped_amplitude,
+        scalar(material, direction_x * steepness, -800, y + 205),
+        -600, y + 190, f"wave {row} horizontal X"
+    )
+    offset_y = multiply(
+        material, chopped_amplitude,
+        scalar(material, direction_y * steepness, -800, y + 280),
+        -600, y + 265, f"wave {row} horizontal Y"
+    )
+    return height, dx, dy, offset_x, offset_y
 
 
 def get_or_create_material():
@@ -246,26 +260,42 @@ def build_material():
     connect(world_position, world_xy, ("Input", ""), "absolute world position XY")
     game_time = make_expression(material, unreal.MaterialExpressionTime, -2800, 50)
     sea_state = scalar_parameter(material, "SeaState", 0.68, -2800, 190)
+    choppiness = scalar_parameter(material, "WaveChoppiness", 0.42, -2800, 280)
 
     # Wavelength and amplitude are centimetres; speed is cycles per second.
+    # The last value is orbital steepness. Long swells move vertices while the
+    # two shortest bands primarily add capillary movement to the pixel normal.
     wave_specs = (
-        (160000.0, 240.0, 0.018, 0.94, 0.34),
-        (62000.0, 92.0, 0.032, -0.24, 0.97),
-        (22000.0, 31.0, 0.070, 0.72, -0.69),
-        (6800.0, 8.5, 0.150, -0.87, -0.50),
-        (1400.0, 1.4, 0.340, 0.43, 0.90),
+        (160000.0, 240.0, 0.018, 0.94, 0.34, 0.78),
+        (62000.0, 92.0, 0.032, -0.24, 0.97, 0.62),
+        (22000.0, 31.0, 0.070, 0.72, -0.69, 0.46),
+        (6800.0, 8.5, 0.150, -0.87, -0.50, 0.28),
+        (1400.0, 1.4, 0.340, 0.43, 0.90, 0.14),
+        (520.0, 0.55, 0.720, -0.12, 0.99, 0.08),
+        (110.0, 0.08, 1.550, 0.88, 0.47, 0.02),
     )
     wave_results = [
-        make_wave(material, world_xy, game_time, sea_state, spec, index)
+        make_wave(material, world_xy, game_time, sea_state, choppiness, spec, index)
         for index, spec in enumerate(wave_specs)
     ]
     height = sum_nodes(material, [result[0] for result in wave_results], -700, -900, "height sum")
     slope_x = sum_nodes(material, [result[1] for result in wave_results], -700, -300, "slope X sum")
     slope_y = sum_nodes(material, [result[2] for result in wave_results], -700, 40, "slope Y sum")
+    horizontal_x = sum_nodes(
+        material, [result[3] for result in wave_results], -700, -620, "orbital X sum"
+    )
+    horizontal_y = sum_nodes(
+        material, [result[4] for result in wave_results], -700, -470, "orbital Y sum"
+    )
 
-    zero_xy = constant2(material, (0.0, 0.0), 100, -950)
-    world_offset = append(material, zero_xy, height, 320, -900, "world position offset")
-    output(material, world_offset, unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET, "wave displacement")
+    horizontal_xy = append(
+        material, horizontal_x, horizontal_y, 350, -680, "horizontal orbital displacement"
+    )
+    world_offset = append(material, horizontal_xy, height, 560, -760, "Gerstner world offset")
+    output(
+        material, world_offset, unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET,
+        "Gerstner-style horizontal and vertical displacement"
+    )
 
     minus_one = scalar(material, -1.0, 80, -360)
     negative_x = multiply(material, slope_x, minus_one, 270, -330, "negative slope X")
@@ -276,18 +306,35 @@ def build_material():
     connect(normal_xyz, normal, ("VectorInput", "Input", ""), "normalized analytical water normal")
     output(material, normal, unreal.MaterialProperty.MP_NORMAL, "world-space wave normal")
 
-    foam_bias = add(
-        material,
-        multiply(material, height, scalar(material, 0.006, 80, 230), 280, 210, "crest scale"),
-        scalar(material, 0.18, 80, 310), 480, 220, "crest bias"
+    absolute_slope_x = make_expression(material, unreal.MaterialExpressionAbs, 80, 120)
+    absolute_slope_y = make_expression(material, unreal.MaterialExpressionAbs, 80, 200)
+    connect(slope_x, absolute_slope_x, ("Input", ""), "absolute wave slope X")
+    connect(slope_y, absolute_slope_y, ("Input", ""), "absolute wave slope Y")
+    slope_energy = add(
+        material, absolute_slope_x, absolute_slope_y, 280, 150, "whitecap slope energy"
     )
-    crest = make_expression(material, unreal.MaterialExpressionSaturate, 680, 220)
+    slope_whitecaps = multiply(
+        material, slope_energy, scalar(material, 11.0, 280, 300),
+        480, 150, "breaking-wave slope mask"
+    )
+    crest_height = multiply(
+        material, height, scalar(material, 0.0042, 80, 310),
+        280, 270, "crest height mask"
+    )
+    crest_and_slope = add(
+        material, crest_height, slope_whitecaps, 520, 240, "crest and slope foam"
+    )
+    foam_bias = add(
+        material, crest_and_slope, scalar(material, 0.08, 360, 350),
+        680, 240, "crest bias"
+    )
+    crest = make_expression(material, unreal.MaterialExpressionSaturate, 850, 240)
     connect(foam_bias, crest, ("Input", ""), "crest saturation")
-    foam_power = make_expression(material, unreal.MaterialExpressionPower, 880, 220)
+    foam_power = make_expression(material, unreal.MaterialExpressionPower, 1030, 240)
     connect(crest, foam_power, ("Base", "Input", ""), "foam power base")
-    connect(scalar(material, 3.2, 680, 340), foam_power, ("Exp", "Exponent"), "foam power exponent")
-    foam_amount = scalar_parameter(material, "FoamAmount", 0.18, 880, 350)
-    foam_mask = multiply(material, foam_power, foam_amount, 1080, 240, "weather foam")
+    connect(scalar(material, 2.35, 850, 360), foam_power, ("Exp", "Exponent"), "foam power exponent")
+    foam_amount = scalar_parameter(material, "FoamAmount", 0.18, 1030, 370)
+    foam_mask = multiply(material, foam_power, foam_amount, 1210, 250, "weather foam")
 
     deep = vector_parameter(material, "DeepWaterColor", (0.0015, 0.010, 0.022), 100, 500)
     horizon = vector_parameter(material, "HorizonWaterColor", (0.018, 0.125, 0.185), 100, 610)
