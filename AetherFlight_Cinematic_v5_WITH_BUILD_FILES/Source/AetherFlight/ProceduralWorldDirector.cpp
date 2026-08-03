@@ -13,6 +13,7 @@
 #include "EngineUtils.h"
 #include "KismetProceduralMeshLibrary.h"
 #include "LandscapeProxy.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -32,6 +33,8 @@ AProceduralWorldDirector::AProceduralWorldDirector()
     Ocean = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Ocean"));
     Ocean->SetupAttachment(Root);
     Ocean->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Ocean->SetCastShadow(false);
+    Ocean->SetTranslucentSortPriority(-5);
 
     Runway = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Runway"));
     Runway->SetupAttachment(Root);
@@ -143,6 +146,7 @@ void AProceduralWorldDirector::Tick(const float DeltaSeconds)
     Sun->SetIntensity(FMath::FInterpTo(Sun->Intensity, TargetSunIntensity, DeltaSeconds, 0.25f));
     Sun->SetLightColor(FMath::Lerp(Sun->GetLightColor(), TargetSunColor, FMath::Clamp(DeltaSeconds * 0.3f, 0.0f, 1.0f)));
     Sun->SetWorldRotation(FMath::RInterpTo(Sun->GetComponentRotation(), TargetSunRotation, DeltaSeconds, 0.18f));
+    UpdateOceanSurface(DeltaSeconds);
 }
 
 void AProceduralWorldDirector::EnsureWorldGenerated()
@@ -174,6 +178,7 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
     {
         Ocean->ClearAllMeshSections();
         Ocean->SetVisibility(false, true);
+        OceanMaterialInstance = nullptr;
         UE_LOG(LogTemp, Display, TEXT("[Aether] Authored water detected; runtime ocean plane is disabled."));
     }
     else
@@ -327,7 +332,9 @@ void AProceduralWorldDirector::GenerateTerrain()
 void AProceduralWorldDirector::GenerateOcean()
 {
     const float Extent = TerrainSizeKilometers * 65000.0f;
-    constexpr int32 Resolution = 65;
+    // 257x257 keeps the fallback ocean inexpensive while giving vertex displacement
+    // enough geometry for kilometre-scale swells. Fine ripples remain pixel-normal detail.
+    constexpr int32 Resolution = 257;
     const float Step = Extent * 2.0f / static_cast<float>(Resolution - 1);
 
     TArray<FVector> Vertices;
@@ -350,7 +357,7 @@ void AProceduralWorldDirector::GenerateOcean()
             const float YCm = -Extent + Y * Step;
             Vertices.Add(FVector(XCm, YCm, -28.0f));
             Normals.Add(FVector::UpVector);
-            UVs.Add(FVector2D(X / 2.0f, Y / 2.0f));
+            UVs.Add(FVector2D(XCm * 0.0001f, YCm * 0.0001f));
             Tangents.Add(FProcMeshTangent(FVector(1.0f, 0.0f, 0.0f), false));
             const float Variation = ValueNoise(XCm * 0.000006f + 70.0f, YCm * 0.000006f - 22.0f);
             Colors.Add(FMath::Lerp(
@@ -379,6 +386,32 @@ void AProceduralWorldDirector::GenerateOcean()
     if (Material)
     {
         Ocean->SetMaterial(0, Material);
+        OceanMaterialInstance = Ocean->CreateDynamicMaterialInstance(0, Material);
+        if (OceanMaterialInstance)
+        {
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
+            UE_LOG(LogTemp, Display, TEXT("[Aether Water] Dynamic Single Layer Water ocean is active."));
+        }
+    }
+}
+
+void AProceduralWorldDirector::UpdateOceanSurface(const float DeltaSeconds)
+{
+    if (DeltaSeconds > 0.0f)
+    {
+        CurrentSeaState = FMath::FInterpTo(CurrentSeaState, TargetSeaState, DeltaSeconds, 0.16f);
+        CurrentOceanRoughness = FMath::FInterpTo(
+            CurrentOceanRoughness, TargetOceanRoughness, DeltaSeconds, 0.22f);
+        CurrentFoamAmount = FMath::FInterpTo(CurrentFoamAmount, TargetFoamAmount, DeltaSeconds, 0.18f);
+    }
+
+    if (OceanMaterialInstance)
+    {
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
     }
 }
 
@@ -597,6 +630,9 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 7.5f;
         TargetSunColor = FLinearColor(1.0f, 0.67f, 0.43f);
         TargetSunRotation = FRotator(-12.0f, -48.0f, 0.0f);
+        TargetSeaState = 0.34f;
+        TargetOceanRoughness = 0.045f;
+        TargetFoamAmount = 0.05f;
         break;
     case EAetherWeather::BrokenClouds:
         TargetStorminess = 0.22f;
@@ -604,6 +640,9 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 5.8f;
         TargetSunColor = FLinearColor(0.93f, 0.96f, 1.0f);
         TargetSunRotation = FRotator(-28.0f, -35.0f, 0.0f);
+        TargetSeaState = 0.68f;
+        TargetOceanRoughness = 0.075f;
+        TargetFoamAmount = 0.18f;
         break;
     case EAetherWeather::StormFront:
         TargetStorminess = 1.0f;
@@ -611,6 +650,9 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 1.35f;
         TargetSunColor = FLinearColor(0.52f, 0.62f, 0.72f);
         TargetSunRotation = FRotator(-18.0f, 20.0f, 0.0f);
+        TargetSeaState = 1.25f;
+        TargetOceanRoughness = 0.15f;
+        TargetFoamAmount = 0.60f;
         break;
     case EAetherWeather::BlueHour:
         TargetStorminess = 0.12f;
@@ -618,12 +660,19 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 1.9f;
         TargetSunColor = FLinearColor(0.42f, 0.55f, 0.9f);
         TargetSunRotation = FRotator(-3.0f, -62.0f, 0.0f);
+        TargetSeaState = 0.52f;
+        TargetOceanRoughness = 0.06f;
+        TargetFoamAmount = 0.12f;
         break;
     }
 
     if (bInstant)
     {
         CurrentStorminess = TargetStorminess;
+        CurrentSeaState = TargetSeaState;
+        CurrentOceanRoughness = TargetOceanRoughness;
+        CurrentFoamAmount = TargetFoamAmount;
+        UpdateOceanSurface(0.0f);
         HeightFog->SetFogDensity(TargetFogDensity);
         Sun->SetIntensity(TargetSunIntensity);
         Sun->SetLightColor(TargetSunColor);
