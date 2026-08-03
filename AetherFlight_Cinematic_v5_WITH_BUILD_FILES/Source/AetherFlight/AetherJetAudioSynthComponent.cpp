@@ -17,12 +17,12 @@ namespace AetherJetAudio
         {
         }
 
-        virtual int32 GetNumChannels() override
+        virtual int32 GetNumChannels() const override
         {
             return 2;
         }
 
-        virtual bool IsFinished() override
+        virtual bool IsFinished() const override
         {
             return false;
         }
