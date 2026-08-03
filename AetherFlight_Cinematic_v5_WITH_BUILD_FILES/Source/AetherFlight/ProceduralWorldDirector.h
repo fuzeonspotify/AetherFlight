@@ -105,6 +105,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "World")
     float TerrainSizeKilometers = 48.0f;
 
+    // This project has an authored World Partition Landscape. Keeping the
+    // fallback opt-in prevents a late-loading Landscape from ever overlapping
+    // the low-detail procedural mesh.
+    UPROPERTY(EditAnywhere, Category = "World|Fallback")
+    bool bAllowRuntimePlaceholderTerrain = false;
+
     UPROPERTY(EditAnywhere, Category = "Weather")
     EAetherWeather Weather = EAetherWeather::BrokenClouds;
 
@@ -122,6 +128,8 @@ private:
     void GenerateEnvironmentInstances();
     void ConfigureAtmosphere();
     void ApplyWeather(EAetherWeather NewWeather, bool bInstant);
+    void DisableRuntimePlaceholderTerrain();
+    void ReconcileLandscapeState();
     bool HasProductionLandscape() const;
     bool HasAuthoredWater() const;
     bool SampleGround(float XCentimeters, float YCentimeters, float& OutHeightMeters, FVector& OutNormal) const;
@@ -135,6 +143,8 @@ private:
 
     bool bGenerated = false;
     bool bUsingProductionLandscape = false;
+    float LandscapeReconcileAccumulator = 0.0f;
+    int32 LandscapeReconcilePassesRemaining = 24;
     float CurrentStorminess = 0.0f;
     float TargetStorminess = 0.0f;
     float CurrentSeaState = 0.68f;
