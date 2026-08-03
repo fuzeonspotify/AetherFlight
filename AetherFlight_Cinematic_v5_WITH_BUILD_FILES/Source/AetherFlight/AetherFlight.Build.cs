@@ -13,7 +13,8 @@ public class AetherFlight : ModuleRules
             "Engine",
             "InputCore",
             "Landscape",
-            "ProceduralMeshComponent"
+            "ProceduralMeshComponent",
+            "AssetRegistry"
         });
     }
 }
