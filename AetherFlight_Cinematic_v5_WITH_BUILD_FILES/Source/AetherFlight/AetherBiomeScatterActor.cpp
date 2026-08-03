@@ -143,6 +143,7 @@ int32 AAetherBiomeScatterActor::GetRockInstanceCount() const
 void AAetherBiomeScatterActor::ClearEnvironment()
 {
     GetWorldTimerManager().ClearTimer(ScatterBuildTimer);
+    GetWorldTimerManager().ClearTimer(ScatterStreamTimer);
     for (UHierarchicalInstancedStaticMeshComponent* TreeComponent : GetTreeComponents())
     {
         TreeComponent->ClearInstances();
@@ -439,7 +440,7 @@ void AAetherBiomeScatterActor::BuildEnvironment()
 
     StreamEnvironmentAroundPlayer();
     GetWorldTimerManager().SetTimer(
-        ScatterBuildTimer,
+        ScatterStreamTimer,
         this,
         &AAetherBiomeScatterActor::StreamEnvironmentAroundPlayer,
         StreamingUpdateSeconds,
