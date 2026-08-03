@@ -141,6 +141,8 @@ private:
     float TargetSeaState = 0.68f;
     float CurrentOceanRoughness = 0.075f;
     float TargetOceanRoughness = 0.075f;
+    float CurrentWaveChoppiness = 0.42f;
+    float TargetWaveChoppiness = 0.42f;
     float CurrentFoamAmount = 0.18f;
     float TargetFoamAmount = 0.18f;
     float TargetFogDensity = 0.002f;
