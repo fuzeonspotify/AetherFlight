@@ -24,29 +24,32 @@ def append_line(lines, text=""):
 
 def run_v2_checks():
     # Importing the original audit executes its complete read-only preflight and
-    # writes the base report. V2 then tightens the asset and ChannelName checks.
-    original = importlib.import_module("AuditAetherRiverEnvironmentAPI_UE58")
+    # writes the base report. V2 then tightens asset and UStruct checks.
+    importlib.import_module("AuditAetherRiverEnvironmentAPI_UE58")
 
     extra = []
     append_line(extra, "")
     append_line(extra, "UE 5.8 STAGE 13 COMPATIBILITY CHECKS V2")
     append_line(extra, "-" * 96)
 
-    channel_ok = False
-    channel_error = None
+    entry_ok = False
+    entry_error = None
     try:
-        channel = common.make_channel_name("FoliageExclusion", extra)
-        entry_class = getattr(unreal, "SplineModifierWeightEntry", None)
-        if entry_class is None:
-            raise RuntimeError("unreal.SplineModifierWeightEntry is unavailable")
-        entry = entry_class()
-        entry.set_editor_property("weight_channel_name", channel)
-        stored = entry.get_editor_property("weight_channel_name")
-        append_line(extra, f"FoliageExclusion ChannelName assignment={stored}")
-        channel_ok = True
+        entry, channel_prop, value_prop, blend_prop, blend = common.make_weight_entry(
+            "FoliageExclusion",
+            extra,
+        )
+        stored_channel = entry.get_editor_property(channel_prop)
+        stored_value = float(entry.get_editor_property(value_prop))
+        stored_blend = entry.get_editor_property(blend_prop)
+        append_line(extra, f"FoliageExclusion weight entry channel={stored_channel}")
+        append_line(extra, f"FoliageExclusion weight entry value={stored_value}")
+        append_line(extra, f"FoliageExclusion weight entry blend={stored_blend}")
+        append_line(extra, f"FoliageExclusion resolved blend={blend}")
+        entry_ok = abs(stored_value - 1.0) <= 0.001
     except Exception as exc:
-        channel_error = f"{type(exc).__name__}: {exc}"
-        append_line(extra, f"FoliageExclusion ChannelName assignment FAILED={channel_error}")
+        entry_error = f"{type(exc).__name__}: {exc}"
+        append_line(extra, f"FoliageExclusion weight entry FAILED={entry_error}")
 
     asset_paths = common.list_game_assets()
     rocks = common.discover_static_meshes(asset_paths, common.ROCK_TOKENS, 12)
@@ -71,8 +74,8 @@ def run_v2_checks():
     append_line(extra, f"Editor/helper meshes selected as shrubs={len(icon_paths)}")
 
     assets_ok = bool(rocks and shrubs and ground and not icon_paths)
-    status = "PASS" if channel_ok and assets_ok else "CHECK"
-    append_line(extra, f"ChannelName construction valid={channel_ok}")
+    status = "PASS" if entry_ok and assets_ok else "CHECK"
+    append_line(extra, f"Complete weight entry construction valid={entry_ok}")
     append_line(extra, f"Strict environment asset selection valid={assets_ok}")
     append_line(extra, f"AETHER_RIVER_ENVIRONMENT_API={status}")
     append_line(extra, "NO_ACTORS_SPAWNED=TRUE")
