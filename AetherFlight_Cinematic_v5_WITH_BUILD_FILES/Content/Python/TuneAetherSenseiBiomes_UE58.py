@@ -196,6 +196,35 @@ def save_asset(asset, description):
         raise RuntimeError(f"Failed to save {description}: {path_of(asset)}")
 
 
+def reload_saved_asset(asset, object_path, description):
+    """Reload a saved package with the UE 5.8 editor loading API."""
+    reload_method = getattr(unreal.EditorLoadingAndSavingUtils, "reload_packages", None)
+    if reload_method is None:
+        raise RuntimeError("EditorLoadingAndSavingUtils.reload_packages is unavailable")
+
+    package = asset.get_outermost()
+    result = reload_method(
+        [package],
+        unreal.ReloadPackagesInteractionMode.ASSUME_POSITIVE,
+    )
+
+    if isinstance(result, tuple):
+        reloaded = bool(result[0])
+        error_message = str(result[1]) if len(result) > 1 else ""
+    else:
+        reloaded = bool(result)
+        error_message = ""
+
+    if not reloaded:
+        suffix = f": {error_message}" if error_message else ""
+        raise RuntimeError(f"Failed to reload {description}{suffix}")
+
+    reloaded_asset = unreal.EditorAssetLibrary.load_asset(object_path)
+    if reloaded_asset is None:
+        raise RuntimeError(f"Reloaded {description} could not be loaded: {object_path}")
+    return reloaded_asset
+
+
 def restore_definition(definition, source):
     definition.set_editor_property("material", source)
     save_asset(definition, "Mesh Partition definition rollback")
@@ -256,10 +285,13 @@ def main():
         save_asset(target, "tuned Sensei material instance")
 
         # Reload and verify from the serialized package before assigning it.
-        unreal.EditorAssetLibrary.unload_asset(TARGET_PACKAGE)
-        target = unreal.EditorAssetLibrary.load_asset(TARGET_PATH)
+        target = reload_saved_asset(
+            target,
+            TARGET_PATH,
+            "tuned Sensei material instance",
+        )
         if not isinstance(target, unreal.MaterialInstanceConstant):
-            raise RuntimeError(f"Failed to reload tuned material instance: {TARGET_PATH}")
+            raise RuntimeError(f"Reloaded asset has the wrong type: {TARGET_PATH}")
         applied = verify_scalar_profile(target)
         texture_passed, texture_lines = verify_textures(target)
         if texture_passed != len(EXPECTED_TEXTURES):
