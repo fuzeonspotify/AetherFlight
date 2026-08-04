@@ -25,11 +25,13 @@ if (!(Test-Path -LiteralPath $editor)) {
 }
 
 Write-Host ""
-Write-Host "Building the repaired Aether map-wide streamed environment..."
+Write-Host "Building the verified Aether map-wide environment..."
+Write-Host "Exact audited trees: PCG_Tree_03 and PCG_Tree_01"
+Write-Host "Exact audited rock: PCG_Boulder_02"
 Write-Host "Coverage: entire 48 km AetherWorld through a reusable local ring"
-Write-Host "Renderer design: five persistent HISM components; no runtime component creation or destruction"
+Write-Host "Renderer design: three persistent HISM components; no runtime component creation or destruction"
 Write-Host "Runtime: one 1.6 km terrain chunk generated per second"
-Write-Host "Local density per chunk: up to 58 trees, 14 shrubs, 9 rocks"
+Write-Host "Density per chunk: up to 82 trees and 15 rocks"
 Write-Host "Renderer safety: no foliage collision, dynamic shadows, distance fields, or density scaling"
 Write-Host ""
 
@@ -43,19 +45,19 @@ Write-Host ""
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "AETHER MAP-WIDE ENVIRONMENT BUILD FAILED" -ForegroundColor Red
+    Write-Host "AETHER VERIFIED ENVIRONMENT BUILD FAILED" -ForegroundColor Red
     if (Test-Path -LiteralPath $logPath) {
         Get-Content -LiteralPath $logPath -Tail 420 |
-            Select-String -Pattern "error C|fatal error|AetherMapWideEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,18
+            Select-String -Pattern "error C|fatal error|AetherVerifiedEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,18
     }
-    throw "Aether map-wide environment build failed with exit code $LASTEXITCODE."
+    throw "Aether verified environment build failed with exit code $LASTEXITCODE."
 }
 
 Write-Host ""
-Write-Host "AETHER MAP-WIDE ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
+Write-Host "AETHER VERIFIED ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
 Write-Host "Launching AetherWorld with -AetherMapEnvironment..."
-Write-Host "Press Play and watch for: AETHER ENVIRONMENT VISIBLE"
-Write-Host "A normal editor launch now remains terrain-only and cannot start this system accidentally."
+Write-Host "Press Play and wait for: AETHER VERIFIED FOLIAGE VISIBLE"
+Write-Host "A normal editor launch remains terrain-only."
 Write-Host ""
 
 $arguments = @(
