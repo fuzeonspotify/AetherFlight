@@ -11,9 +11,11 @@ class UStaticMesh;
 struct FHitResult;
 
 /**
- * Map-wide environment streamer using the exact static meshes found by the
- * project asset audit. Three persistent HISM components are reused for the
- * entire play session; no runtime renderer components are created or destroyed.
+ * Map-wide cinematic environment streamer using the exact DZ tree, GV shrub,
+ * Nanite plant, and boulder meshes found by the project asset audit.
+ *
+ * Persistent HISM components are created once and reused for the entire play
+ * session. No renderer components are created or destroyed while flying.
  */
 UCLASS()
 class AETHERFLIGHT_API AAetherVerifiedEnvironmentActor : public AActor
@@ -31,10 +33,25 @@ private:
     USceneComponent* Root;
 
     UPROPERTY(VisibleAnywhere)
-    UHierarchicalInstancedStaticMeshComponent* TreePrimary;
+    UHierarchicalInstancedStaticMeshComponent* PineTrees;
 
     UPROPERTY(VisibleAnywhere)
-    UHierarchicalInstancedStaticMeshComponent* TreeSecondary;
+    UHierarchicalInstancedStaticMeshComponent* AspenTrees;
+
+    UPROPERTY(VisibleAnywhere)
+    UHierarchicalInstancedStaticMeshComponent* OakTrees;
+
+    UPROPERTY(VisibleAnywhere)
+    UHierarchicalInstancedStaticMeshComponent* CoastalTrees;
+
+    UPROPERTY(VisibleAnywhere)
+    UHierarchicalInstancedStaticMeshComponent* ShrubPrimary;
+
+    UPROPERTY(VisibleAnywhere)
+    UHierarchicalInstancedStaticMeshComponent* ShrubSecondary;
+
+    UPROPERTY(VisibleAnywhere)
+    UHierarchicalInstancedStaticMeshComponent* GroundPlants;
 
     UPROPERTY(VisibleAnywhere)
     UHierarchicalInstancedStaticMeshComponent* Rocks;
@@ -67,12 +84,16 @@ private:
 
     int32 PrepareAttempts = 0;
     int32 TotalTrees = 0;
+    int32 TotalShrubs = 0;
+    int32 TotalGroundPlants = 0;
     int32 TotalRocks = 0;
     bool bMeshesReady = false;
     bool bHasCenterChunk = false;
 
     static constexpr float ChunkSizeCm = 160000.0f;
     static constexpr int32 ActiveRadiusChunks = 2;
-    static constexpr int32 TreesPerChunk = 82;
-    static constexpr int32 RocksPerChunk = 15;
+    static constexpr int32 TreesPerChunk = 72;
+    static constexpr int32 ShrubsPerChunk = 28;
+    static constexpr int32 GroundPlantsPerChunk = 20;
+    static constexpr int32 RocksPerChunk = 10;
 };
