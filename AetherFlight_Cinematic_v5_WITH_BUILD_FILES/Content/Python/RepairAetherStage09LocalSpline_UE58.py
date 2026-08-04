@@ -1,5 +1,6 @@
 from pathlib import Path
 import math
+import statistics
 import unreal
 
 MAP_PATH = "/Game/Maps/AetherWorld"
@@ -17,9 +18,12 @@ RELATIVE_POINTS_CM = (
     (23000.0, 7000.0),
     (45000.0, -18000.0),
 )
+LOCAL_PROFILE_Z_OFFSETS_CM = (200.0, 100.0, 0.0, -100.0, -200.0)
+
 EXPECTED_POINT_COUNT = len(RELATIVE_POINTS_CM)
 MIN_EXPECTED_LENGTH_CM = 80000.0
 MAX_EXPECTED_LENGTH_CM = 170000.0
+MAX_LOCAL_Z_SPAN_CM = 2000.0
 REPORT_LINES = []
 
 
@@ -65,50 +69,97 @@ def find_single_component(actor, component_class, description):
     return components[0]
 
 
-def safe_relative_scale(component):
+def safe_property(obj, name, fallback_method=None):
     try:
-        return component.get_editor_property("relative_scale3d")
+        return obj.get_editor_property(name)
     except Exception:
-        try:
-            return component.get_relative_scale3d()
-        except Exception:
-            return None
+        if fallback_method:
+            method = getattr(obj, fallback_method, None)
+            if callable(method):
+                try:
+                    return method()
+                except Exception:
+                    pass
+    return None
+
+
+def vector_is_close(value, expected, tolerance=0.01):
+    if value is None:
+        return False
+    return (
+        math.isclose(float(value.x), float(expected.x), abs_tol=tolerance)
+        and math.isclose(float(value.y), float(expected.y), abs_tol=tolerance)
+        and math.isclose(float(value.z), float(expected.z), abs_tol=tolerance)
+    )
 
 
 def normalize_transforms(actor, spline, lines):
     old_actor_scale = actor.get_actor_scale3d()
-    old_spline_scale = safe_relative_scale(spline)
-    record(lines, f"Stage09 actor scale before={old_actor_scale}")
-    record(lines, f"Stage09 spline relative scale before={old_spline_scale}")
+    old_relative_location = safe_property(spline, "relative_location", "get_relative_location")
+    old_relative_rotation = safe_property(spline, "relative_rotation", "get_relative_rotation")
+    old_relative_scale = safe_property(spline, "relative_scale3d", "get_relative_scale3d")
 
+    record(lines, f"Stage09 actor scale before={old_actor_scale}")
+    record(lines, f"Stage09 spline relative location before={old_relative_location}")
+    record(lines, f"Stage09 spline relative rotation before={old_relative_rotation}")
+    record(lines, f"Stage09 spline relative scale before={old_relative_scale}")
+
+    zero_vector = unreal.Vector(0.0, 0.0, 0.0)
+    zero_rotation = unreal.Rotator(0.0, 0.0, 0.0)
     unit_scale = unreal.Vector(1.0, 1.0, 1.0)
+
     actor.set_actor_scale3d(unit_scale)
 
-    set_relative = getattr(spline, "set_relative_scale3d", None)
-    if callable(set_relative):
-        set_relative(unit_scale)
-    else:
+    try:
+        spline.set_relative_location(zero_vector, False, False)
+    except Exception:
+        spline.set_editor_property("relative_location", zero_vector)
+
+    try:
+        spline.set_relative_rotation(zero_rotation, False, False)
+    except Exception:
+        spline.set_editor_property("relative_rotation", zero_rotation)
+
+    try:
+        spline.set_relative_scale3d(unit_scale)
+    except Exception:
         spline.set_editor_property("relative_scale3d", unit_scale)
 
     new_actor_scale = actor.get_actor_scale3d()
-    new_spline_scale = safe_relative_scale(spline)
+    new_relative_location = safe_property(spline, "relative_location", "get_relative_location")
+    new_relative_rotation = safe_property(spline, "relative_rotation", "get_relative_rotation")
+    new_relative_scale = safe_property(spline, "relative_scale3d", "get_relative_scale3d")
+
     record(lines, f"Stage09 actor scale after={new_actor_scale}")
-    record(lines, f"Stage09 spline relative scale after={new_spline_scale}")
+    record(lines, f"Stage09 spline relative location after={new_relative_location}")
+    record(lines, f"Stage09 spline relative rotation after={new_relative_rotation}")
+    record(lines, f"Stage09 spline relative scale after={new_relative_scale}")
 
-    for label, scale in (
-        ("actor", new_actor_scale),
-        ("spline", new_spline_scale),
+    if not vector_is_close(new_actor_scale, unit_scale):
+        raise RuntimeError(f"Could not normalize Stage09 actor scale: {new_actor_scale}")
+    if not vector_is_close(new_relative_location, zero_vector):
+        raise RuntimeError(
+            f"Could not normalize Stage09 spline relative location: {new_relative_location}"
+        )
+    if new_relative_rotation is not None and not (
+        math.isclose(float(new_relative_rotation.pitch), 0.0, abs_tol=0.01)
+        and math.isclose(float(new_relative_rotation.yaw), 0.0, abs_tol=0.01)
+        and math.isclose(float(new_relative_rotation.roll), 0.0, abs_tol=0.01)
     ):
-        if scale is None:
-            continue
-        if not (
-            math.isclose(float(scale.x), 1.0, abs_tol=0.001)
-            and math.isclose(float(scale.y), 1.0, abs_tol=0.001)
-            and math.isclose(float(scale.z), 1.0, abs_tol=0.001)
-        ):
-            raise RuntimeError(f"Could not normalize Stage09 {label} scale: {scale}")
+        raise RuntimeError(
+            f"Could not normalize Stage09 spline relative rotation: {new_relative_rotation}"
+        )
+    if not vector_is_close(new_relative_scale, unit_scale):
+        raise RuntimeError(
+            f"Could not normalize Stage09 spline relative scale: {new_relative_scale}"
+        )
 
-    return old_actor_scale, old_spline_scale
+    return {
+        "actor_scale": old_actor_scale,
+        "relative_location": old_relative_location,
+        "relative_rotation": old_relative_rotation,
+        "relative_scale": old_relative_scale,
+    }
 
 
 def terrain_hit(world, x, y, lines):
@@ -187,6 +238,72 @@ def existing_world_points(spline, lines):
     return points
 
 
+def finite_z_values(points):
+    values = []
+    for point in points:
+        if point is None:
+            continue
+        try:
+            value = float(point.z)
+        except Exception:
+            continue
+        if math.isfinite(value):
+            values.append(value)
+    return values
+
+
+def choose_surface_baseline(world, actor_location, old_points, lines):
+    trace_hits = []
+    for offset_x, offset_y in RELATIVE_POINTS_CM:
+        hit = terrain_hit(
+            world,
+            actor_location.x + offset_x,
+            actor_location.y + offset_y,
+            lines,
+        )
+        trace_hits.append(hit)
+
+    trace_z = finite_z_values(trace_hits)
+    old_channel_z = finite_z_values(old_points)
+
+    if trace_z:
+        baseline = float(statistics.median(trace_z))
+        source = f"TRACE_MEDIAN_{len(trace_z)}_OF_{EXPECTED_POINT_COUNT}"
+    elif old_channel_z:
+        baseline = float(statistics.median(old_channel_z) + CHANNEL_DEPTH_CM)
+        source = "EXISTING_CHANNEL_MEDIAN_PLUS_DEPTH"
+    else:
+        baseline = float(actor_location.z)
+        source = "ACTOR_Z"
+
+    record(lines, f"Terrain trace passes={len(trace_z)}/{EXPECTED_POINT_COUNT}")
+    record(lines, f"Selected surface baseline Z={baseline}")
+    record(lines, f"Surface baseline source={source}")
+    return baseline, source, len(trace_z)
+
+
+def move_actor_to_surface_baseline(actor, baseline_z, lines):
+    old_location = actor.get_actor_location()
+    new_location = unreal.Vector(old_location.x, old_location.y, baseline_z)
+    actor.set_actor_location(new_location, False, False)
+    verified = actor.get_actor_location()
+    record(lines, f"Stage09 actor location before baseline={old_location}")
+    record(lines, f"Stage09 actor location after baseline={verified}")
+    if not (
+        math.isclose(float(verified.x), float(new_location.x), abs_tol=0.1)
+        and math.isclose(float(verified.y), float(new_location.y), abs_tol=0.1)
+        and math.isclose(float(verified.z), float(new_location.z), abs_tol=0.1)
+    ):
+        raise RuntimeError(f"Could not move Stage09 actor to baseline: {verified}")
+    return old_location, verified
+
+
+def expected_local_point(index):
+    offset_x, offset_y = RELATIVE_POINTS_CM[index]
+    local_z = -CHANNEL_DEPTH_CM + LOCAL_PROFILE_Z_OFFSETS_CM[index]
+    return unreal.Vector(offset_x, offset_y, local_z)
+
+
 def validate_local_points(spline, lines):
     count = int(spline.get_number_of_spline_points())
     record(lines, f"Spline point count after repair={count}")
@@ -196,29 +313,44 @@ def validate_local_points(spline, lines):
         )
 
     local_space = unreal.SplineCoordinateSpace.LOCAL
-    for index, (expected_x, expected_y) in enumerate(RELATIVE_POINTS_CM):
+    z_values = []
+    for index in range(EXPECTED_POINT_COUNT):
+        expected = expected_local_point(index)
         point = spline.get_location_at_spline_point(index, local_space)
+        z_values.append(float(point.z))
         record(lines, f"Verified local point {index}={point}")
-        if not (
-            math.isclose(float(point.x), expected_x, abs_tol=2.0)
-            and math.isclose(float(point.y), expected_y, abs_tol=2.0)
-        ):
+        if not vector_is_close(point, expected, tolerance=2.0):
             raise RuntimeError(
-                f"Local point {index} was not rebuilt correctly: {point}; "
-                f"expected X={expected_x}, Y={expected_y}"
+                f"Local point {index} was not rebuilt correctly: {point}; expected {expected}"
             )
+
+    z_span = max(z_values) - min(z_values)
+    record(lines, f"Verified local Z span cm={z_span}")
+    if z_span > MAX_LOCAL_Z_SPAN_CM:
+        raise RuntimeError(f"Repaired spline local Z span is unsafe: {z_span} cm")
 
 
 def rebuild_stage09_spline(world, actor, spline, lines):
-    actor_location = actor.get_actor_location()
-    record(lines, f"Stage09 actor location={actor_location}")
+    original_actor_location = actor.get_actor_location()
+    record(lines, f"Stage09 actor location={original_actor_location}")
     record(lines, f"Stage09 actor rotation={actor.get_actor_rotation()}")
 
     old_length = spline_length(spline)
     old_points = existing_world_points(spline, lines)
     record(lines, f"Spline length before repair cm={old_length}")
 
-    old_actor_scale, old_spline_scale = normalize_transforms(actor, spline, lines)
+    original_transforms = normalize_transforms(actor, spline, lines)
+    baseline_z, baseline_source, trace_passes = choose_surface_baseline(
+        world,
+        original_actor_location,
+        old_points,
+        lines,
+    )
+    old_actor_location, new_actor_location = move_actor_to_surface_baseline(
+        actor,
+        baseline_z,
+        lines,
+    )
 
     try:
         spline.set_editor_property("closed_loop", False)
@@ -238,26 +370,10 @@ def rebuild_stage09_spline(world, actor, spline, lines):
     if curve_type is None:
         curve_type = getattr(unreal.SplinePointType, "CURVE_CLAMPED", None)
 
-    trace_passes = 0
-    for index, (offset_x, offset_y) in enumerate(RELATIVE_POINTS_CM):
-        world_x = actor_location.x + offset_x
-        world_y = actor_location.y + offset_y
-        hit = terrain_hit(world, world_x, world_y, lines)
-
-        if hit:
-            world_z = hit.z - CHANNEL_DEPTH_CM
-            placement = "TRACE"
-            trace_passes += 1
-        elif index < len(old_points) and old_points[index] is not None:
-            world_z = old_points[index].z
-            placement = "EXISTING_Z_FALLBACK"
-        else:
-            world_z = actor_location.z - CHANNEL_DEPTH_CM
-            placement = "ACTOR_Z_FALLBACK"
-
-        local_point = unreal.Vector(offset_x, offset_y, world_z - actor_location.z)
+    for index in range(EXPECTED_POINT_COUNT):
+        local_point = expected_local_point(index)
         spline.add_spline_point(local_point, local_space, False)
-        record(lines, f"Added local spline point {index}={local_point} | {placement}")
+        record(lines, f"Added local spline point {index}={local_point} | CONTROLLED_PROFILE")
 
     for index in range(EXPECTED_POINT_COUNT):
         if curve_type is not None:
@@ -284,7 +400,6 @@ def rebuild_stage09_spline(world, actor, spline, lines):
 
     new_length = spline_length(spline)
     record(lines, f"Spline length after repair cm={new_length}")
-    record(lines, f"Terrain trace passes={trace_passes}/{EXPECTED_POINT_COUNT}")
 
     if new_length is None or not (
         MIN_EXPECTED_LENGTH_CM <= new_length <= MAX_EXPECTED_LENGTH_CM
@@ -293,13 +408,16 @@ def rebuild_stage09_spline(world, actor, spline, lines):
             f"Repaired spline length is outside the expected local range: {new_length} cm"
         )
 
-    return (
-        old_length,
-        new_length,
-        trace_passes,
-        old_actor_scale,
-        old_spline_scale,
-    )
+    return {
+        "old_length": old_length,
+        "new_length": new_length,
+        "trace_passes": trace_passes,
+        "baseline_z": baseline_z,
+        "baseline_source": baseline_source,
+        "old_actor_location": old_actor_location,
+        "new_actor_location": new_actor_location,
+        "original_transforms": original_transforms,
+    }
 
 
 def refresh_stage09_modifier(stage09_actor, lines):
@@ -372,9 +490,9 @@ def write_report(lines):
 
 def main():
     lines = REPORT_LINES
-    record(lines, "AETHER STAGE 09 LOCAL-SPACE SPLINE REPAIR V2")
+    record(lines, "AETHER STAGE 09 LOCAL-SPACE SPLINE REPAIR V3")
     record(lines, "=" * 96)
-    record(lines, "Normalizes transform scale and rebuilds exactly five local-space points.")
+    record(lines, "Rebuilds exactly five local points with a controlled vertical profile.")
     record(lines, "No compiled Mesh Partition build is started.")
 
     world = load_world()
@@ -387,13 +505,12 @@ def main():
         raise RuntimeError("unreal.SplineComponent is unavailable")
     stage09_spline = find_single_component(stage09_actor, spline_class, "SplineComponent")
 
-    (
-        old_length,
-        new_length,
-        trace_passes,
-        old_actor_scale,
-        old_spline_scale,
-    ) = rebuild_stage09_spline(world, stage09_actor, stage09_spline, lines)
+    result = rebuild_stage09_spline(
+        world,
+        stage09_actor,
+        stage09_spline,
+        lines,
+    )
 
     stage09_cache_refreshed = refresh_stage09_modifier(stage09_actor, lines)
     repair_stage10_reference(stage09_actor, stage09_spline, stage10_actor, lines)
@@ -402,18 +519,28 @@ def main():
     record(lines, f"Map save={'PASS' if saved else 'CHECK'}")
     record(lines, "")
     record(lines, "REPAIR_RESULT=PASS")
-    record(lines, f"SPLINE_LENGTH_BEFORE_CM={old_length}")
-    record(lines, f"SPLINE_LENGTH_AFTER_CM={new_length}")
-    record(lines, f"TERRAIN_TRACE_PASSES={trace_passes}/{EXPECTED_POINT_COUNT}")
-    record(lines, f"ACTOR_SCALE_BEFORE={old_actor_scale}")
-    record(lines, f"SPLINE_RELATIVE_SCALE_BEFORE={old_spline_scale}")
+    record(lines, f"SPLINE_LENGTH_BEFORE_CM={result['old_length']}")
+    record(lines, f"SPLINE_LENGTH_AFTER_CM={result['new_length']}")
+    record(lines, f"TERRAIN_TRACE_PASSES={result['trace_passes']}/{EXPECTED_POINT_COUNT}")
+    record(lines, f"SURFACE_BASELINE_Z_CM={result['baseline_z']}")
+    record(lines, f"SURFACE_BASELINE_SOURCE={result['baseline_source']}")
+    record(lines, f"ACTOR_LOCATION_BEFORE={result['old_actor_location']}")
+    record(lines, f"ACTOR_LOCATION_AFTER={result['new_actor_location']}")
     record(lines, "ACTOR_SCALE_AFTER=1,1,1")
+    record(lines, "SPLINE_RELATIVE_LOCATION_AFTER=0,0,0")
+    record(lines, "SPLINE_RELATIVE_ROTATION_AFTER=0,0,0")
     record(lines, "SPLINE_RELATIVE_SCALE_AFTER=1,1,1")
     record(lines, "SPLINE_POINT_COUNT=5")
+    record(lines, "SPLINE_LOCAL_Z_PROFILE_CM=-400,-500,-600,-700,-800")
     record(lines, "SPLINE_COORDINATE_SPACE=LOCAL")
     record(lines, f"STAGE09_CACHE_REFRESHED={str(stage09_cache_refreshed).upper()}")
     record(lines, "STAGE10_REFERENCE_REFRESHED=TRUE")
-    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, confirm the Stage09 line, points, and bounds move together, then include Stage10 and Stage09 in Build To.")
+    record(
+        lines,
+        "NEXT_EDITOR_ACTION=Open AetherWorld, confirm the line, points, and bounds move together. "
+        "If the channel is vertically above or below the terrain, move the Stage09 actor only on Z, "
+        "then include Stage10 and Stage09 in Build To.",
+    )
     record(lines, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
 
     write_report(lines)
