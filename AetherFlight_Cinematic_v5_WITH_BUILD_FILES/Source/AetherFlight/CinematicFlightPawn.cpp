@@ -128,18 +128,56 @@ void ACinematicFlightPawn::BeginPlay()
         FlightStreamingSource->EnableStreamingSource();
     }
 
+    // Hold the aircraft at 20,000 ft while the initial activation area streams.
+    // The hold ends as soon as the streaming source reports completion after a
+    // short minimum delay, or after the safety timeout so Play can never hang.
+    bWaitingForInitialStreaming = true;
+    InitialStreamingWaitElapsed = 0.0f;
+    PhysicsBody->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    PhysicsBody->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+    PhysicsBody->SetSimulatePhysics(false);
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(
+            -1,
+            InitialStreamingMaximumWaitSeconds,
+            FColor(120, 220, 255),
+            TEXT("AETHER // STREAMING FLIGHT AREA"));
+    }
+
     LoadImportedAirframe();
     if (!bHasImportedAirframe)
     {
         BuildFallbackAirframe();
     }
     ActivateCamera(CameraMode);
-    PreviousVelocity = PhysicsBody->GetPhysicsLinearVelocity();
+    PreviousVelocity = FVector::ZeroVector;
 }
 
 void ACinematicFlightPawn::Tick(const float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+
+    if (bWaitingForInitialStreaming)
+    {
+        InitialStreamingWaitElapsed += DeltaSeconds;
+        UpdateCamera(DeltaSeconds);
+
+        const bool bMinimumWaitComplete =
+            InitialStreamingWaitElapsed >= InitialStreamingMinimumWaitSeconds;
+        const bool bStreamingComplete =
+            !FlightStreamingSource || FlightStreamingSource->IsStreamingCompleted();
+        const bool bTimedOut =
+            InitialStreamingWaitElapsed >= InitialStreamingMaximumWaitSeconds;
+
+        if (bMinimumWaitComplete && (bStreamingComplete || bTimedOut))
+        {
+            ReleaseAircraftAfterStreaming();
+        }
+        return;
+    }
+
     ApplyAerodynamics(FMath::Clamp(DeltaSeconds, 0.001f, 0.05f));
     UpdateCamera(DeltaSeconds);
 
@@ -151,6 +189,21 @@ void ACinematicFlightPawn::Tick(const float DeltaSeconds)
         SmoothedGForce = FMath::FInterpTo(SmoothedGForce, NormalG, DeltaSeconds, 3.5f);
     }
     PreviousVelocity = Velocity;
+}
+
+void ACinematicFlightPawn::ReleaseAircraftAfterStreaming()
+{
+    bWaitingForInitialStreaming = false;
+    PhysicsBody->SetSimulatePhysics(true);
+    PhysicsBody->SetPhysicsLinearVelocity(GetActorForwardVector() * 15500.0f);
+    PhysicsBody->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+    PreviousVelocity = PhysicsBody->GetPhysicsLinearVelocity();
+
+    UE_LOG(
+        LogTemp,
+        Display,
+        TEXT("[Aether Streaming] Initial flight area released after %.2f seconds."),
+        InitialStreamingWaitElapsed);
 }
 
 void ACinematicFlightPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
