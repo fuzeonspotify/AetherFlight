@@ -10,9 +10,6 @@ REPORT_PATH = Path(unreal.Paths.project_saved_dir()) / "AetherVideoTexturePatchI
 TEXTURE_PATH = "/Game/Aether/MeshTerrain/Weightmaps/T_MT_Rock_Weight"
 TRACE_TOP_Z = 900000.0
 TRACE_BOTTOM_Z = -300000.0
-
-# Keep this feature inside the verified 1.2 km remesh area but far enough from
-# the cave center that the two tests are visually distinct.
 OFFSET_X_CM = 32000.0
 OFFSET_Y_CM = 26000.0
 COVERAGE_CM = 24000.0
@@ -89,39 +86,18 @@ def terrain_hit(world, x, y, lines):
     start = unreal.Vector(x, y, TRACE_TOP_Z)
     end = unreal.Vector(x, y, TRACE_BOTTOM_Z)
     attempts = []
-
     try:
-        attempts.append(
-            unreal.SystemLibrary.line_trace_single(
-                world,
-                start,
-                end,
-                unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
-                False,
-                [],
-                unreal.DrawDebugTrace.NONE,
-                True,
-            )
-        )
+        attempts.append(unreal.SystemLibrary.line_trace_single(
+            world, start, end, unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
+            False, [], unreal.DrawDebugTrace.NONE, True))
     except Exception as exc:
         record(lines, f"Visibility trace warning={exc}")
-
     try:
-        attempts.append(
-            unreal.SystemLibrary.line_trace_single_by_profile(
-                world,
-                start,
-                end,
-                "BlockAll",
-                False,
-                [],
-                unreal.DrawDebugTrace.NONE,
-                True,
-            )
-        )
+        attempts.append(unreal.SystemLibrary.line_trace_single_by_profile(
+            world, start, end, "BlockAll", False, [],
+            unreal.DrawDebugTrace.NONE, True))
     except Exception as exc:
         record(lines, f"BlockAll trace warning={exc}")
-
     for hit in attempts:
         if not hit:
             continue
@@ -140,23 +116,18 @@ def add_component_to_actor(actor, component_class, lines):
     handles = list(subsystem.k2_gather_subobject_data_for_instance(actor))
     if not handles:
         raise RuntimeError("SubobjectDataSubsystem returned no actor root handle")
-
     params = unreal.AddNewSubobjectParams()
     params.set_editor_property("parent_handle", handles[0])
     params.set_editor_property("new_class", component_class)
     new_handle, fail_reason = subsystem.add_new_subobject(params)
-
     if not unreal.SubobjectDataBlueprintFunctionLibrary.is_handle_valid(new_handle):
         raise RuntimeError(f"Could not add {component_class}: {fail_reason}")
-
     data = subsystem.k2_find_subobject_data_from_handle(new_handle)
     if not data:
         raise RuntimeError(f"Added {component_class}, but SubobjectData could not be resolved")
-
     component = unreal.SubobjectDataBlueprintFunctionLibrary.get_associated_object(data)
     if not component:
         raise RuntimeError(f"Added {component_class}, but associated object could not be resolved")
-
     record(lines, f"Added component={component.get_class().get_path_name()}")
     return component
 
@@ -174,6 +145,18 @@ def try_set_property(obj, names, value, lines, required=False):
     if required:
         raise RuntimeError(f"Could not set any of {names}. Errors={errors}")
     return False
+
+
+def try_get_property(obj, names, lines):
+    for name in names:
+        try:
+            value = obj.get_editor_property(name)
+            record(lines, f"Read {obj.get_name()}.{name}={value}")
+            return True, value, name
+        except Exception:
+            continue
+    record(lines, f"Property not readable: {obj.get_name()} candidates={names}")
+    return False, None, None
 
 
 def try_call(obj, names, args, lines, required=False):
@@ -195,50 +178,68 @@ def try_call(obj, names, args, lines, required=False):
 
 
 def assign_mesh_partition(component, mesh_partition, lines):
-    direct = try_set_property(
-        component,
+    direct = try_set_property(component,
         ("affected_mega_mesh", "affected_mesh_partition", "affected_mesh_partition_actor"),
-        mesh_partition,
-        lines,
-    )
-    called, _ = try_call(
-        component,
+        mesh_partition, lines)
+    called, _ = try_call(component,
         ("bp_set_affected_mega_mesh", "set_affected_mega_mesh"),
-        (mesh_partition,),
-        lines,
-    )
+        (mesh_partition,), lines)
     if not direct and not called:
         raise RuntimeError("TexturePatchModifier could not be assigned to the Mesh Partition")
+
+
+def create_height_entry(component, lines):
+    entry_class = getattr(unreal, "TexturePatchHeightEntry", None)
+    if not entry_class:
+        raise RuntimeError("unreal.TexturePatchHeightEntry is unavailable")
+    try:
+        entry = unreal.new_object(entry_class, outer=component)
+        record(lines, "Created TexturePatchHeightEntry with component outer")
+    except Exception as first_exc:
+        record(lines, f"new_object keyword form warning={first_exc}")
+        try:
+            entry = unreal.new_object(entry_class, component)
+            record(lines, "Created TexturePatchHeightEntry with positional outer")
+        except Exception as second_exc:
+            raise RuntimeError(f"Could not create TexturePatchHeightEntry: {second_exc}")
+    if not entry:
+        raise RuntimeError("TexturePatchHeightEntry creation returned None")
+    return entry
 
 
 def get_or_create_height_entry(component, lines):
     called, entry = try_call(component, ("get_height_channel",), (), lines)
     if called and entry:
-        record(lines, f"Height entry={entry.get_class().get_path_name()} | source=existing")
+        record(lines, f"Height entry={entry.get_class().get_path_name()} | source=get_height_channel")
         return entry
 
-    entry_class = getattr(unreal, "TexturePatchHeightEntry", None)
-    if not entry_class:
-        raise RuntimeError("unreal.TexturePatchHeightEntry is unavailable")
+    readable, entry, property_name = try_get_property(
+        component, ("height_channel", "height_entry", "height_displacement"), lines)
+    if readable and entry:
+        record(lines, f"Height entry={entry.get_class().get_path_name()} | source=property:{property_name}")
+        return entry
 
-    entry = None
-    try:
-        entry = unreal.new_object(entry_class, outer=component)
-    except Exception as first_exc:
-        record(lines, f"new_object keyword form warning={first_exc}")
-        try:
-            entry = unreal.new_object(entry_class, component)
-        except Exception as second_exc:
-            raise RuntimeError(f"Could not create TexturePatchHeightEntry: {second_exc}")
+    entry = create_height_entry(component, lines)
+    property_set = try_set_property(
+        component, ("height_channel", "height_entry", "height_displacement"), entry, lines)
+    method_set, _ = try_call(
+        component, ("set_height_channel", "bp_set_height_channel"), (entry,), lines)
+    if not property_set and not method_set:
+        api_names = sorted(name for name in dir(component)
+                           if "height" in name.lower() or "channel" in name.lower())
+        record(lines, f"Height/channel component API names={','.join(api_names)}")
+        raise RuntimeError(
+            "TexturePatchModifier could not accept the height entry through its instanced property or setter")
 
-    if not entry:
-        raise RuntimeError("TexturePatchHeightEntry creation returned None")
-
-    set_called, _ = try_call(component, ("set_height_channel",), (entry,), lines)
-    if not set_called:
-        raise RuntimeError("TexturePatchModifier could not accept the new height entry")
-
-    record(lines, f"Height entry={entry.get_class().get_path_name()} | source=created")
+    called, verified = try_call(component, ("get_height_channel",), (), lines)
+    if called and verified:
+        entry = verified
+    else:
+        readable, verified, _ = try_get_property(
+            component, ("height_channel", "height_entry", "height_displacement"), lines)
+        if readable and verified:
+            entry = verified
+    record(lines, f"Height entry={entry.get_class().get_path_name()} | source=created_and_assigned")
     return entry
 
 
@@ -248,30 +249,24 @@ def configure_height_entry(entry, texture, lines):
         texture_set = try_set_property(entry, ("texture_asset",), texture, lines)
     if not texture_set:
         raise RuntimeError("TexturePatchHeightEntry could not receive the source texture")
-
     channel_set, _ = try_call(entry, ("set_texture_channel_index",), (0,), lines)
     if not channel_set:
         try_set_property(entry, ("texture_channel_index",), 0, lines, required=True)
-
     blend_value = getattr(unreal.TexturePatchBlendMode, "ADDITIVE", None)
     if blend_value is not None:
         blend_set, _ = try_call(entry, ("set_texture_patch_blend_mode",), (blend_value,), lines)
         if not blend_set:
             try_set_property(entry, ("blend_mode", "texture_patch_blend_mode"), blend_value, lines)
-
     alpha_value = getattr(unreal.TexturePatchAlphaMode, "ALWAYS_ONE", None)
     if alpha_value is not None:
         alpha_set, _ = try_call(entry, ("set_alpha_blending_mode",), (alpha_value,), lines)
         if not alpha_set:
             try_set_property(entry, ("alpha_mode",), alpha_value, lines)
-
     try_set_property(entry, ("encoding_scale",), float(HEIGHT_SCALE_CM), lines, required=True)
     try_set_property(entry, ("zero_in_encoding",), float(ZERO_VALUE), lines, required=True)
-
     falloff_value = getattr(unreal.TexturePatchFalloffMode, "SMOOTH", None)
     if falloff_value is not None:
         try_set_property(entry, ("falloff_mode",), falloff_value, lines)
-
     use_curve, _ = try_call(entry, ("set_use_value_curve",), (False,), lines)
     if not use_curve:
         try_set_property(entry, ("use_value_curve", "b_use_value_curve"), False, lines)
@@ -284,53 +279,38 @@ def configure_adaptive_tessellation(component, lines):
     if mode is None:
         record(lines, "Adaptive tessellation enum unavailable")
         return False
-
-    called, _ = try_call(
-        component,
+    called, _ = try_call(component,
         ("set_adaptive_tessellation_mode", "set_adaptive_tesselation_mode"),
-        (mode,),
-        lines,
-    )
+        (mode,), lines)
     if called:
         return True
-
-    return try_set_property(
-        component,
+    return try_set_property(component,
         ("adaptive_tessellation_mode", "adaptive_tesselation_mode", "tessellation_mode"),
-        mode,
-        lines,
-    )
+        mode, lines)
 
 
 def configure_component(component, mesh_partition, texture, lines):
     assign_mesh_partition(component, mesh_partition, lines)
     try_set_property(component, ("priority",), 30.0, lines, required=True)
     try_set_property(component, ("is_disabled", "disabled"), False, lines, required=True)
-
     coverage = unreal.Vector2D(COVERAGE_CM, COVERAGE_CM)
     called, _ = try_call(component, ("set_unscaled_coverage",), (coverage,), lines)
     if not called:
         raise RuntimeError("TexturePatchModifier.set_unscaled_coverage was not callable")
-
     apply_z_called, _ = try_call(component, ("set_apply_component_z_scale",), (False,), lines)
     if not apply_z_called:
         record(lines, "Apply Component Z Scale setter not exposed; default retained")
-
     entry = get_or_create_height_entry(component, lines)
     configure_height_entry(entry, texture, lines)
     adaptive = configure_adaptive_tessellation(component, lines)
-
     reread, _ = try_call(component, ("update_from_texture",), (), lines)
     if not reread:
         raise RuntimeError("TexturePatchModifier.update_from_texture was not callable")
-
     try_call(component, ("trigger_update",), (), lines)
-
     try:
         component.modify()
     except Exception:
         pass
-
     return adaptive
 
 
@@ -352,24 +332,19 @@ def main():
     lines = []
     record(lines, "AETHER VIDEO STAGE 08 - TEXTURE PATCH INSTALL")
     record(lines, "=" * 96)
-
     world = load_world()
     actor_subsystem, actors = get_actors()
     clear_previous_install(actor_subsystem, actors, lines)
-
     _, actors = get_actors()
     dependency = find_actor_by_label(actors, DEPENDENCY_LABEL)
     if not dependency:
         raise RuntimeError(f"Required completed dependency was not found: {DEPENDENCY_LABEL}")
-
     mesh_partition = find_mesh_partition(actors)
     if not mesh_partition:
         raise RuntimeError("Authoritative Mesh Partition actor could not be resolved")
-
     modifier_class = getattr(unreal, "TexturePatchModifier", None)
     if not modifier_class:
         raise RuntimeError("unreal.TexturePatchModifier is unavailable")
-
     texture = unreal.EditorAssetLibrary.load_asset(TEXTURE_PATH)
     if not texture:
         raise RuntimeError(f"Texture source could not be loaded: {TEXTURE_PATH}")
@@ -397,14 +372,9 @@ def main():
 
     modifier_actor_class = getattr(unreal, "ModifierActor", unreal.Actor)
     actor = actor_subsystem.spawn_actor_from_class(
-        modifier_actor_class,
-        location,
-        unreal.Rotator(0.0, 0.0, 0.0),
-        False,
-    )
+        modifier_actor_class, location, unreal.Rotator(0.0, 0.0, 0.0), False)
     actor.set_actor_label(TEXTURE_LABEL, True)
     actor.set_editor_property("tags", [unreal.Name(TAG)])
-
     component = add_component_to_actor(actor, modifier_class, lines)
     adaptive = configure_component(component, mesh_partition, texture, lines)
 
@@ -420,9 +390,8 @@ def main():
     record(lines, f"ZERO_VALUE={ZERO_VALUE}")
     record(lines, f"ADAPTIVE_TESSELLATION={'ENABLED' if adaptive else 'NOT_EXPOSED_DEFAULT_RETAINED'}")
     record(lines, f"PLACEMENT_RESULT={placement}")
-    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, select Stage08 in Mesh Partition Outliner, click its Build To button, and inspect the local displaced patch before Play.")
+    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, select Stage08 in Mesh Partition Outliner, and click its Build To button.")
     record(lines, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
-
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     unreal.log_warning(f"AETHER_VIDEO_TEXTURE_PATCH_REPORT={REPORT_PATH}")
