@@ -43,17 +43,14 @@ def main():
     boolean_class = getattr(unreal, "BooleanModifier", None)
     record(lines, f"unreal.BooleanModifier={'YES' if boolean_class else 'NO'}")
     if not boolean_class:
-        exposed = sorted(name for name in dir(unreal) if "boolean" in name.lower())
-        record(lines, f"Boolean-related Unreal names={','.join(exposed)}")
+        exposed_names = sorted(name for name in dir(unreal) if "boolean" in name.lower())
+        record(lines, f"Boolean-related Unreal names={','.join(exposed_names)}")
         record(lines, "AETHER_BOOLEAN_API=FAIL")
         REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
         REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
 
     component = unreal.get_default_object(boolean_class)
-    # Unreal Python exposes BooleanModifier as a generated Python type. Calling
-    # UObject.get_path_name() directly on that type is an unbound-method error;
-    # inspect the actual UClass through the default object instead.
     record(lines, f"Class={component.get_class().get_path_name()}")
     record(lines, f"Default object={component.get_path_name()}")
 
@@ -91,6 +88,7 @@ def main():
     record(lines, "-" * 96)
     method_names = (
         "update_from_mesh",
+        "bp_set_static_mesh",
         "set_expand_operator_bounds",
         "get_expand_operator_bounds",
         "bp_set_affected_mega_mesh",
@@ -105,11 +103,18 @@ def main():
     record(lines, "")
     record(lines, "BOOLEAN AND MESH-SOURCE ENUMS")
     record(lines, "-" * 96)
-    enum_names = sorted(
+    enum_names = {
+        "BooleanOperation",
+        "BooleanToolMeshEmbedding",
+        "BooleanModifierChannelSourceMode",
+        "ModifierMeshSourceMode",
+        "MegaMeshBooleanModifierPreviewVisOptions",
+    }
+    enum_names.update(
         name for name in dir(unreal)
-        if "boolean" in name.lower() or "modifier_mesh_source" in name.lower()
+        if "boolean" in name.lower() or "modifiermeshsourcemode" in name.lower()
     )
-    for name in enum_names:
+    for name in sorted(enum_names):
         enum_type = getattr(unreal, name, None)
         members = enum_members(enum_type) if enum_type else []
         record(lines, f"unreal.{name}: {', '.join(members) if members else 'no inspectable members'}")
@@ -136,16 +141,36 @@ def main():
         "/Game/Rock_Collection_04/Meshes/Rock_06/StaticMeshes/SM_Rock_06",
         "/Game/Rock_Collection_04/Meshes/Rock_07/StaticMeshes/SM_Rock_07",
     ]
+    assets_ok = True
     for path in source_assets:
-        record(lines, f"{'YES' if unreal.EditorAssetLibrary.does_asset_exist(path) else 'NO '} | {path}")
+        exists = unreal.EditorAssetLibrary.does_asset_exist(path)
+        assets_ok = assets_ok and exists
+        record(lines, f"{'YES' if exists else 'NO '} | {path}")
 
-    required = (
+    # UE 5.8 exposes the Blueprint setter for the source mesh even though the
+    # native CallInEditor UpdateFromMesh function is not wrapped for Python.
+    # Either the direct property or the Blueprint setter is sufficient.
+    has_affected_setter = bool(
         exposed.get("Affected Mesh Partition")
-        and exposed.get("Static Mesh")
-        and exposed.get("Boolean Operation")
-        and methods.get("update_from_mesh")
+        or methods.get("bp_set_affected_mega_mesh")
+        or methods.get("set_affected_mega_mesh")
     )
+    has_mesh_setter = bool(
+        exposed.get("Static Mesh")
+        or methods.get("bp_set_static_mesh")
+        or methods.get("update_from_mesh")
+    )
+    required = bool(
+        has_affected_setter
+        and has_mesh_setter
+        and exposed.get("Mesh Source Mode")
+        and exposed.get("Boolean Operation")
+        and assets_ok
+    )
+
     record(lines, "")
+    record(lines, f"Affected setter available={has_affected_setter}")
+    record(lines, f"Static-mesh setter available={has_mesh_setter}")
     record(lines, f"AETHER_BOOLEAN_API={'PASS' if required else 'CHECK'}")
     record(lines, "NO_ACTORS_SPAWNED=TRUE")
     record(lines, "NO_PACKAGES_SAVED=TRUE")
