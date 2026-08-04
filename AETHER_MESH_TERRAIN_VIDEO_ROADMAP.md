@@ -80,49 +80,72 @@ Actor: `Aether_VideoStage08_TexturePatch`
 
 Actor: `Aether_VideoStage09_SplineChannel`
 
-- A roughly 900 m lowered terrain channel was installed inside Stage 05.
-- Five spline control points shape the channel.
+- The spline was repaired into local coordinate space.
+- Five control points form a roughly 1.17 km channel.
+- The points use a controlled shallow downhill profile.
 - Approximate channel depth is 6 m.
 - Full-influence half-width is 14 m with 32 m falloff.
-- Position deformation only; weight-channel output is deferred until water/biome integration.
+- Position deformation only; weight-channel output is deferred until riverbank material integration.
 - Priority 40 builds it after the Stage 08 Texture Patch.
-- The resulting map and external actor were committed.
+- The spline, bounds, and actor transform now move together.
 
-## 10. Spline Remesh Modifier — IMPLEMENTATION READY / NEXT INSTALL
+## 10. Spline Remesh Modifier — COMPLETE
 
-Planned actor: `Aether_VideoStage10_SplineRemesh`
+Actor: `Aether_VideoStage10_SplineRemesh`
 
-Repository support now includes:
-
-- `AUDIT_AETHER_SPLINE_REMESH_API.ps1`
-- `Content/Python/AuditAetherSplineRemeshModifierAPI_UE58.py`
-- `INSTALL_AETHER_VIDEO_SPLINE_REMESH_STAGE.ps1`
-- `Content/Python/InstallAetherVideoSplineRemeshStage_UE58.py`
-
-The installer reuses Stage 09's saved spline and adds local topology only along the channel:
-
+- Reuses the repaired Stage 09 spline through a component reference.
 - 60 m spline influence radius.
 - 2.5 m target edge length.
 - Two remesh iterations.
 - Vertex smoothing disabled to preserve the authored channel profile.
-- UV resampling enabled.
-- Priority 35, so topology is refined before Stage 09 deforms it at priority 40.
-- No whole-world compiled Mesh Partition build is started.
+- Priority 35 refines topology before Stage 09 deforms it at priority 40.
+- The enabled/disabled Wireframe comparison was visually verified.
+- No whole-world compiled Mesh Partition build was started.
 
-## 11. Water-body integration — PREPARED, NOT TERRAIN-INTEGRATED
+## 11. Local river water integration — IMPLEMENTATION READY / NEXT INSTALL
 
-After Stage 10 is visually verified:
+Planned actors:
 
-- Add a WaterBodyRiver and corresponding Mesh Terrain RiverModifier.
-- Reuse the Stage 09 channel as the first controlled riverbed test.
-- Configure wetland or rock weight-channel output only after the banks are stable.
-- Keep the river local until preview, collision, and compiled-section behavior are validated.
+- `Aether_VideoStage11_River`
+- `Aether_VideoStage11_WaterZone`
+
+Repository support includes:
+
+- `AUDIT_AETHER_MESH_TERRAIN_RIVER_API.ps1`
+- `Content/Python/AuditAetherMeshTerrainRiverAPI_UE58.py`
+- `INSTALL_AETHER_VIDEO_RIVER_STAGE.ps1`
+- `Content/Python/InstallAetherVideoRiverStage_UE58.py`
+
+The installer is audit-first and will:
+
+- Create a native `WaterBodyRiver`.
+- Copy the repaired five-point Stage 09 path into a separate `WaterSplineComponent`.
+- Place the water surface approximately 3 m above the Stage 09 channel.
+- Request a 20 m total river width, 3 m depth, and a gentle water velocity.
+- Create a local 1.6 km `WaterZone` for water-mesh generation.
+- Add the concrete Mesh Terrain river modifier exposed by UE 5.8.
+- Assign it to the authoritative Mesh Partition at priority 50.
+- Save `AetherWorld` without starting the compiled whole-world build.
+
+## 12. Riverbank material and biome integration — NOT STARTED
+
+After Stage 11 is visually verified:
+
+- Write wetland, sand, gravel, or rock weight channels along the banks.
+- Exclude dry ground cover from the water corridor.
+- Add wet vegetation and riverbank rocks with a controlled local PCG pass.
+- Keep the work local until water tiles, collision, and streaming are validated.
+
+## 13. Expanded hydrology — DEFERRED
+
+- Extend the verified local river into a lake, waterfall, or ocean connection.
 - Ocean can remain independent because it does not need to terraform the terrain.
+- Validate river-to-lake or river-to-ocean transition materials before expanding the system.
 
-## 12. Conversion back to classic Landscape — DEFERRED
+## 14. Conversion back to classic Landscape — DEFERRED
 
 The tutorial demonstrates conversion workflows, but Aether should remain Mesh Terrain during production because caves, overhangs, local topology, and Boolean features are core goals. Conversion should only be tested on a duplicate map near the end of development.
 
 ## Current checkpoint
 
-**AetherFlight matches the tutorial through the regular Spline Modifier stage. Stage 10 Spline Remesh code is now prepared. Run the Stage 10 launcher, compare the channel with the remesh disabled/enabled in Build To, then commit the resulting map/external-actor assets before beginning water-body integration.**
+**AetherFlight matches the tutorial through the repaired and visually verified Spline Remesh stage. Stage 11 local river support is prepared. Run the Stage 11 launcher, inspect the WaterBodyRiver and WaterZone, Build To through its river modifier, then commit the resulting map/external-actor assets before beginning riverbank weight-channel and environment integration.**
