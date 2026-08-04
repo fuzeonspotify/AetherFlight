@@ -29,7 +29,7 @@ Write-Host "Project: $project"
 Write-Host "Script:  $pythonScript"
 Write-Host ""
 Write-Host "The updater detects the material currently assigned to MPD_AetherWorld."
-Write-Host "It refreshes normal parameters on a material instance, or duplicates an editable Aether material before adding normals."
+Write-Host "It changes only verified material-instance texture/scalar overrides."
 Write-Host "It does not alter terrain geometry, collision, Mesh Partition resolution, displacement, or World Position Offset."
 
 if ($NoLaunch) {
@@ -58,7 +58,7 @@ $arguments = @(
 )
 
 Write-Host ""
-Write-Host "Launching Unreal Engine 5.8 and applying the safe surface-detail update..."
+Write-Host "Launching Unreal Engine 5.8 and applying the surface-detail update..."
 Write-Host "Unreal will close automatically after the Python script finishes."
 Write-Host "Waiting for Unreal to exit..."
 
@@ -74,9 +74,26 @@ if (Test-Path -LiteralPath $reportPath) {
 }
 
 Write-Host ""
-Write-Error "The updater did not create its completion report. Check the Unreal log below."
+Write-Host "AETHER SURFACE DETAIL FAILED" -ForegroundColor Red
+Write-Host "--------------------------------"
+Write-Host "The updater did not create its completion report."
+
 if (Test-Path -LiteralPath $logPath) {
-    Get-Content -LiteralPath $logPath -Tail 180 |
-        Select-String -Pattern "Aether Surface Detail|Python|Traceback|Error|Fatal"
+    $logLines = Get-Content -LiteralPath $logPath
+    $matches = $logLines | Select-String -Pattern (
+        "UpgradeAetherTerrainSurfaceDetail|Aether Verified Surface|" +
+        "LogPython: Error|Traceback|RuntimeError|TypeError|AttributeError|" +
+        "Missing required texture|rejected|verification failed|Python script executed with errors"
+    ) -Context 8,22
+
+    if ($matches) {
+        $matches | Select-Object -Last 20
+    } else {
+        Write-Host "No filtered traceback was found; showing the last 300 log lines."
+        $logLines | Select-Object -Last 300
+    }
+} else {
+    Write-Host "Unreal log was not found: $logPath"
 }
-exit 1
+
+throw "Aether surface-detail update failed. The Unreal traceback is printed above."
