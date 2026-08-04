@@ -1,10 +1,11 @@
 """UE 5.8 compatibility fixes for the Stage 13 river environment installer.
 
 This module patches the original Stage 13 helpers before the installer imports
-them. It addresses two API/data issues exposed by the first real project run:
+them. It addresses API/data issues exposed by real project runs:
 
-* ChannelName is a UStruct, so logging it through UObject.get_name() causes the
-  otherwise successful property assignment to be treated as a failure.
+* ChannelName and SplineModifierWeightEntry are UStruct values. Logging either
+  through UObject.get_name() can make a successful property assignment appear
+  to have failed.
 * Broad shrub keyword discovery can match editor helper/icon meshes in the
   GlobalFoliageActor folder instead of actual plant geometry.
 """
@@ -16,6 +17,29 @@ import AetherRiverEnvironmentCommon_UE58 as _base
 
 def _safe_record(lines, text):
     _base.record(lines, text)
+
+
+def struct_set_property(value_struct, names, value, lines, required=False):
+    """Set a UStruct field without invoking UObject-only logging methods."""
+    errors = []
+    for name in names:
+        try:
+            value_struct.set_editor_property(name, value)
+            stored = value_struct.get_editor_property(name)
+            _safe_record(
+                lines,
+                f"Set {type(value_struct).__name__}.{name}={stored} without UObject logging",
+            )
+            return name
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+    if required:
+        raise RuntimeError(f"Could not set any of {names}. Errors={errors}")
+    _safe_record(
+        lines,
+        f"UStruct property not exposed or rejected: {type(value_struct).__name__} candidates={names}",
+    )
+    return None
 
 
 def make_channel_name(channel_text, lines):
@@ -34,9 +58,10 @@ def make_channel_name(channel_text, lines):
         for property_name in ("name", "channel_name", "value"):
             try:
                 candidate.set_editor_property(property_name, name_value)
+                stored = candidate.get_editor_property(property_name)
                 _safe_record(
                     lines,
-                    f"Set ChannelName.{property_name}={channel_text} without UObject logging",
+                    f"Set ChannelName.{property_name}={stored} without UObject logging",
                 )
                 _safe_record(lines, f"Constructed ChannelName candidate={candidate}")
                 return candidate
@@ -67,6 +92,59 @@ def make_channel_name(channel_text, lines):
     raise RuntimeError(
         f"Could not construct ChannelName for {channel_text}. Errors={errors}"
     )
+
+
+def make_weight_entry(channel_text, lines):
+    """Build and validate the complete SplineModifierWeightEntry safely."""
+    entry_class = getattr(unreal, "SplineModifierWeightEntry", None)
+    if entry_class is None:
+        raise RuntimeError("unreal.SplineModifierWeightEntry is unavailable")
+
+    entry = entry_class()
+    _safe_record(lines, f"Created weight entry={entry}")
+
+    channel_prop = struct_set_property(
+        entry,
+        ("weight_channel_name", "channel_name", "channel"),
+        make_channel_name(channel_text, lines),
+        lines,
+        required=True,
+    )
+    value_prop = struct_set_property(
+        entry,
+        ("value", "weight", "weight_value", "channel_value", "target_value"),
+        1.0,
+        lines,
+        required=True,
+    )
+
+    blend = _base.resolve_enum_member(
+        "SplineWeightBlendMode",
+        ("ALPHA_BLEND", "ALPHABLEND", "ALPHA", "MAX"),
+        lines,
+    )
+    if blend is None:
+        raise RuntimeError("SplineWeightBlendMode AlphaBlend could not be resolved")
+
+    blend_prop = struct_set_property(
+        entry,
+        ("blend_mode", "weight_blend_mode"),
+        blend,
+        lines,
+        required=True,
+    )
+
+    stored_channel = entry.get_editor_property(channel_prop)
+    stored_value = float(entry.get_editor_property(value_prop))
+    stored_blend = entry.get_editor_property(blend_prop)
+    _safe_record(lines, f"Validated weight entry channel={stored_channel}")
+    _safe_record(lines, f"Validated weight entry value={stored_value}")
+    _safe_record(lines, f"Validated weight entry blend={stored_blend}")
+
+    if abs(stored_value - 1.0) > 0.001:
+        raise RuntimeError(f"Weight entry value validation failed: {stored_value}")
+
+    return entry, channel_prop, value_prop, blend_prop, blend
 
 
 def discover_static_meshes(asset_paths, tokens, limit):
@@ -137,6 +215,7 @@ def discover_static_meshes(asset_paths, tokens, limit):
 # Patch the original module's globals. Functions already defined in that module,
 # including configure_exclusion_modifier(), resolve these names at call time.
 _base.make_channel_name = make_channel_name
+_base.make_weight_entry = make_weight_entry
 _base.discover_static_meshes = discover_static_meshes
 
 # Re-export the original public API after patching it.
