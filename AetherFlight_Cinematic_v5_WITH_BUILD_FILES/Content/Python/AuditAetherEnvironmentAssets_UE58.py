@@ -11,8 +11,27 @@ SHRUB_WORDS = ("shrub", "bush", "fern", "groundcover", "ground_cover", "plant", 
 REJECT_WORDS = ("meshpartitionstaticmesh", "compiledsection", "farfield", "terrain", "landscape", "aircraft", "drone", "runway", "water", "ocean", "lake", "sky", "cloud", "volume", "collision", "proxy", "billboard", "impostor", "imposter", "cluster", "merged", "forest_group", "_lod", "lod_")
 
 
+def object_path_of_asset(data):
+    """Return a UE object path without relying on version-specific AssetData helpers."""
+    package_name = str(data.package_name)
+    asset_name = str(data.asset_name)
+    if not package_name or package_name == "None":
+        return asset_name
+    if package_name.endswith("." + asset_name):
+        return package_name
+    return f"{package_name}.{asset_name}"
+
+
 def text_of_asset(data):
-    return " ".join(str(value) for value in (data.asset_name, data.package_name, data.package_path, data.get_soft_object_path())).lower()
+    return " ".join(
+        str(value)
+        for value in (
+            data.asset_name,
+            data.package_name,
+            data.package_path,
+            object_path_of_asset(data),
+        )
+    ).lower()
 
 
 def classify(text):
@@ -44,7 +63,20 @@ def mesh_dimensions(mesh):
 
 def score_candidate(kind, text, dimensions):
     score = 0.0
-    score += sum(20.0 for token in ("/foliage/", "/trees/", "/tree/", "/rocks/", "/rock/", "/vegetation/", "/nature/", "/environment/") if token in text)
+    score += sum(
+        20.0
+        for token in (
+            "/foliage/",
+            "/trees/",
+            "/tree/",
+            "/rocks/",
+            "/rock/",
+            "/vegetation/",
+            "/nature/",
+            "/environment/",
+        )
+        if token in text
+    )
     if text.split("/")[-1].startswith("sm_"):
         score += 2.0
     if dimensions:
@@ -70,7 +102,11 @@ def score_candidate(kind, text, dimensions):
 def main():
     registry = unreal.AssetRegistryHelpers.get_asset_registry()
     registry.wait_for_completion()
-    assets = registry.get_assets_by_path(unreal.Name("/Game"), recursive=True, include_only_on_disk_assets=True)
+    assets = registry.get_assets_by_path(
+        unreal.Name("/Game"),
+        recursive=True,
+        include_only_on_disk_assets=True,
+    )
 
     static_mesh_assets = []
     for data in assets:
@@ -106,7 +142,14 @@ def main():
                     load_error = "get_asset returned None"
             except Exception as exc:
                 load_error = str(exc)
-            evaluated[kind].append((score_candidate(kind, text, dimensions), str(data.get_soft_object_path()), dimensions, load_error))
+            evaluated[kind].append(
+                (
+                    score_candidate(kind, text, dimensions),
+                    object_path_of_asset(data),
+                    dimensions,
+                    load_error,
+                )
+            )
 
     for kind in evaluated:
         evaluated[kind].sort(key=lambda row: row[0], reverse=True)
@@ -134,11 +177,13 @@ def main():
             lines.append(f"{index:02d}. score={score:7.2f} | {dims} | {path}{suffix}")
         lines.append("")
 
-    lines.extend((
-        "NEXT STEP",
-        "Use the highest-scoring individual TREE and ROCK object paths in the map-wide environment loader.",
-        "Do not use cluster, merged, billboard, proxy, collision, or explicit LOD meshes.",
-    ))
+    lines.extend(
+        (
+            "NEXT STEP",
+            "Use the highest-scoring individual TREE and ROCK object paths in the map-wide environment loader.",
+            "Do not use cluster, merged, billboard, proxy, collision, or explicit LOD meshes.",
+        )
+    )
 
     os.makedirs(PROJECT_SAVED, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as report:
