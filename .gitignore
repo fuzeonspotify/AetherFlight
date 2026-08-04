@@ -48,3 +48,6 @@ AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/AudioSource/Jet/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+**/__pycache__/
+*.pyc
