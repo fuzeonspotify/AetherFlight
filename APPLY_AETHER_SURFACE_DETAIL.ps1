@@ -10,6 +10,8 @@ $repoRoot = $PSScriptRoot
 $projectRoot = Join-Path $repoRoot "AetherFlight_Cinematic_v5_WITH_BUILD_FILES"
 $project = Join-Path $projectRoot "AetherFlight.uproject"
 $pythonScript = Join-Path $projectRoot "Content\Python\UpgradeAetherTerrainSurfaceDetail_UE58.py"
+$reportPath = Join-Path $projectRoot "Saved\AetherSurfaceDetailReport.txt"
+$logPath = Join-Path $projectRoot "Saved\Logs\AetherFlight.log"
 
 if (!(Test-Path -LiteralPath $project)) {
     throw "AetherFlight.uproject was not found: $project"
@@ -45,6 +47,10 @@ if (!$editor) {
     throw "UnrealEditor.exe for UE 5.8 was not found."
 }
 
+if (Test-Path -LiteralPath $reportPath) {
+    Remove-Item -LiteralPath $reportPath -Force
+}
+
 $arguments = @(
     ('"{0}"' -f $project),
     "-nosound",
@@ -53,4 +59,24 @@ $arguments = @(
 
 Write-Host ""
 Write-Host "Launching Unreal Engine 5.8 and applying the safe surface-detail update..."
-Start-Process -FilePath $editor -ArgumentList $arguments
+Write-Host "Unreal will close automatically after the Python script finishes."
+Write-Host "Waiting for Unreal to exit..."
+
+$process = Start-Process -FilePath $editor -ArgumentList $arguments -PassThru -Wait
+Write-Host "Unreal exited with code $($process.ExitCode)."
+
+if (Test-Path -LiteralPath $reportPath) {
+    Write-Host ""
+    Write-Host "AETHER SURFACE DETAIL FINISHED"
+    Write-Host "--------------------------------"
+    Get-Content -LiteralPath $reportPath
+    exit 0
+}
+
+Write-Host ""
+Write-Error "The updater did not create its completion report. Check the Unreal log below."
+if (Test-Path -LiteralPath $logPath) {
+    Get-Content -LiteralPath $logPath -Tail 180 |
+        Select-String -Pattern "Aether Surface Detail|Python|Traceback|Error|Fatal"
+}
+exit 1
