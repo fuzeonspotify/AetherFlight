@@ -25,12 +25,12 @@ if (!(Test-Path -LiteralPath $editor)) {
 }
 
 Write-Host ""
-Write-Host "Building the Aether map-wide streamed environment..."
-Write-Host "Coverage: entire 48 km AetherWorld"
-Write-Host "Runtime: deterministic 1.6 km chunks around the aircraft"
-Write-Host "Memory safety: distant chunks are destroyed as new chunks stream in"
-Write-Host "Density per active chunk: up to 92 trees, 24 shrubs, 14 rocks"
-Write-Host "Renderer safety: no foliage collision, dynamic shadows, or distance-field updates yet"
+Write-Host "Building the repaired Aether map-wide streamed environment..."
+Write-Host "Coverage: entire 48 km AetherWorld through a reusable local ring"
+Write-Host "Renderer design: five persistent HISM components; no runtime component creation or destruction"
+Write-Host "Runtime: one 1.6 km terrain chunk generated per second"
+Write-Host "Local density per chunk: up to 58 trees, 14 shrubs, 9 rocks"
+Write-Host "Renderer safety: no foliage collision, dynamic shadows, distance fields, or density scaling"
 Write-Host ""
 
 & $buildBat `
@@ -45,22 +45,23 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "AETHER MAP-WIDE ENVIRONMENT BUILD FAILED" -ForegroundColor Red
     if (Test-Path -LiteralPath $logPath) {
-        Get-Content -LiteralPath $logPath -Tail 360 |
-            Select-String -Pattern "error C|fatal error|AetherMapWideEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,16
+        Get-Content -LiteralPath $logPath -Tail 420 |
+            Select-String -Pattern "error C|fatal error|AetherMapWideEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,18
     }
     throw "Aether map-wide environment build failed with exit code $LASTEXITCODE."
 }
 
 Write-Host ""
 Write-Host "AETHER MAP-WIDE ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
-Write-Host "Launching AetherWorld..."
-Write-Host "Press Play and wait for: AETHER // MAP-WIDE FORESTS AND ROCKS STREAMING"
-Write-Host "Emergency terrain-only launch flag: -AetherNoEnvironment"
+Write-Host "Launching AetherWorld with -AetherMapEnvironment..."
+Write-Host "Press Play and watch for: AETHER ENVIRONMENT VISIBLE"
+Write-Host "A normal editor launch now remains terrain-only and cannot start this system accidentally."
 Write-Host ""
 
 $arguments = @(
     ('"{0}"' -f $project),
     "/Game/Maps/AetherWorld",
+    "-AetherMapEnvironment",
     "-nosound",
     "-log"
 )
