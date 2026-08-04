@@ -13,7 +13,16 @@ ROLLBACK_PATH = (
 REPORT_PATH = Path(unreal.Paths.project_saved_dir()) / "AetherBiomeRollbackReport.txt"
 
 
-def main() -> None:
+def path_of(value):
+    if value is None:
+        return "None"
+    try:
+        return value.get_path_name()
+    except Exception:
+        return str(value)
+
+
+def main():
     definition = unreal.EditorAssetLibrary.load_asset(DEFINITION_PATH)
     rollback = unreal.EditorAssetLibrary.load_asset(ROLLBACK_PATH)
     if definition is None:
@@ -21,24 +30,25 @@ def main() -> None:
     if not isinstance(rollback, unreal.MaterialInstanceConstant):
         raise RuntimeError(f"Missing verified Sensei rollback material: {ROLLBACK_PATH}")
 
-    before = definition.get_editor_property("material")
+    before = path_of(definition.get_editor_property("material"))
     definition.set_editor_property("material", rollback)
-    try:
-        definition.post_edit_change()
-    except Exception:
-        pass
     if not unreal.EditorAssetLibrary.save_loaded_asset(definition, False):
         raise RuntimeError(f"Failed to save Mesh Partition definition: {DEFINITION_PATH}")
 
+    after = path_of(definition.get_editor_property("material"))
+    if after != ROLLBACK_PATH:
+        raise RuntimeError(f"Rollback verification failed: active material is {after}")
+
     report = (
         "Aether Sensei surface rollback complete.\n\n"
-        f"Before: {before.get_path_name() if before else 'None'}\n"
-        f"After: {ROLLBACK_PATH}\n\n"
+        f"Before: {before}\n"
+        f"After: {after}\n\n"
+        "The verified Sensei surface is active again.\n"
         "Terrain geometry, collision, Mesh Partition resolution, and streaming were not changed."
     )
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(report, encoding="utf-8")
-    unreal.log(report.replace("\n", " | "))
+    unreal.log_warning("AETHER_SENSEI_SURFACE_RESTORED=" + after)
 
 
 if __name__ == "__main__":
