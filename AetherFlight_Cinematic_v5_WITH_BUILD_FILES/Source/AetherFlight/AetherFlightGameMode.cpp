@@ -2,6 +2,7 @@
 
 #include "AetherEnvironmentTestActor.h"
 #include "AetherFlightHUD.h"
+#include "AetherMapWideEnvironmentActor.h"
 #include "CinematicFlightPawn.h"
 #include "EngineUtils.h"
 #include "Misc/CommandLine.h"
@@ -35,10 +36,12 @@ void AAetherFlightGameMode::StartPlay()
         Director->EnsureWorldGenerated();
     }
 
-    // Keep normal editor and gameplay launches on the stable terrain-only path.
-    // The deliberately limited ecosystem approval zone is enabled only by the
-    // dedicated launcher using -AetherEnvironmentTest.
-    if (FParse::Param(FCommandLine::Get(), TEXT("AetherEnvironmentTest")))
+    const bool bRunLimitedTest =
+        FParse::Param(FCommandLine::Get(), TEXT("AetherEnvironmentTest"));
+    const bool bDisableEnvironment =
+        FParse::Param(FCommandLine::Get(), TEXT("AetherNoEnvironment"));
+
+    if (bRunLimitedTest)
     {
         AAetherEnvironmentTestActor* EnvironmentTest = nullptr;
         for (TActorIterator<AAetherEnvironmentTestActor> It(GetWorld()); It; ++It)
@@ -54,8 +57,29 @@ void AAetherFlightGameMode::StartPlay()
         UE_LOG(LogTemp, Display,
             TEXT("[Aether Environment Test] Opt-in crash-safe approval zone enabled."));
     }
+    else if (!bDisableEnvironment)
+    {
+        AAetherMapWideEnvironmentActor* MapEnvironment = nullptr;
+        for (TActorIterator<AAetherMapWideEnvironmentActor> It(GetWorld()); It; ++It)
+        {
+            MapEnvironment = *It;
+            break;
+        }
+        if (!MapEnvironment)
+        {
+            MapEnvironment = GetWorld()->SpawnActor<AAetherMapWideEnvironmentActor>();
+        }
+
+        UE_LOG(LogTemp, Display,
+            TEXT("[Aether Map Environment] Map-wide deterministic chunk streaming enabled."));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Display,
+            TEXT("[Aether Map Environment] Disabled by -AetherNoEnvironment."));
+    }
 
     // ACinematicFlightPawn::BeginPlay owns the normal streaming-source startup
-    // and flight release. The opt-in test actor performs one later, intentional
-    // teleport into the small approval zone.
+    // and flight release. Environment actors wait for Mesh Terrain collision
+    // before generating any instances.
 }
