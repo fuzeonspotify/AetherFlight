@@ -76,42 +76,47 @@ Actor: `Aether_VideoStage08_TexturePatch`
 - Adaptive tessellation is requested where exposed by UE 5.8.
 - The stage was built, inspected, and committed.
 
-## 9. Regular Spline Modifier — IMPLEMENTATION READY / NEXT INSTALL
+## 9. Regular Spline Modifier — COMPLETE
 
-Planned actor: `Aether_VideoStage09_SplineChannel`
+Actor: `Aether_VideoStage09_SplineChannel`
+
+- A roughly 900 m lowered terrain channel was installed inside Stage 05.
+- Five spline control points shape the channel.
+- Approximate channel depth is 6 m.
+- Full-influence half-width is 14 m with 32 m falloff.
+- Position deformation only; weight-channel output is deferred until water/biome integration.
+- Priority 40 builds it after the Stage 08 Texture Patch.
+- The resulting map and external actor were committed.
+
+## 10. Spline Remesh Modifier — IMPLEMENTATION READY / NEXT INSTALL
+
+Planned actor: `Aether_VideoStage10_SplineRemesh`
 
 Repository support now includes:
 
-- `AUDIT_AETHER_SPLINE_MODIFIER_API.ps1`
-- `Content/Python/AuditAetherSplineModifierAPI_UE58.py`
-- `INSTALL_AETHER_VIDEO_SPLINE_STAGE.ps1`
-- `Content/Python/InstallAetherVideoSplineStage_UE58.py`
+- `AUDIT_AETHER_SPLINE_REMESH_API.ps1`
+- `Content/Python/AuditAetherSplineRemeshModifierAPI_UE58.py`
+- `INSTALL_AETHER_VIDEO_SPLINE_REMESH_STAGE.ps1`
+- `Content/Python/InstallAetherVideoSplineRemeshStage_UE58.py`
 
-The installer creates a roughly 900 m lowered terrain channel inside the Stage 05 Remesh zone:
+The installer reuses Stage 09's saved spline and adds local topology only along the channel:
 
-- Five terrain-following spline control points.
-- Approximately 6 m channel depth.
-- 14 m full-influence half-width.
-- 32 m falloff on each side.
-- Position deformation only; weight-channel output is deferred until water/biome integration.
-- Priority 40 so it builds after the Stage 08 Texture Patch.
-- No compiled whole-world Mesh Partition build is started.
-
-## 10. Spline Remesh Modifier — NOT STARTED
-
-After Stage 09 is visually verified:
-
-- Add a `SplineRemeshModifier` along the channel.
-- Compare remesh and tessellate modes.
-- Reduce topology only where the spline needs smoother banks.
-- Keep the modifier inside the local test region before considering production routes.
+- 60 m spline influence radius.
+- 2.5 m target edge length.
+- Two remesh iterations.
+- Vertex smoothing disabled to preserve the authored channel profile.
+- UV resampling enabled.
+- Priority 35, so topology is refined before Stage 09 deforms it at priority 40.
+- No whole-world compiled Mesh Partition build is started.
 
 ## 11. Water-body integration — PREPARED, NOT TERRAIN-INTEGRATED
 
-- Hydrology and ocean support files exist.
-- Mesh Terrain Lake/River modifiers are not yet installed on the production terrain.
-- The Stage 09 channel can become the first controlled riverbed test.
-- Wetland or rock weight-channel writing should be added only after the spline shape is stable.
+After Stage 10 is visually verified:
+
+- Add a WaterBodyRiver and corresponding Mesh Terrain RiverModifier.
+- Reuse the Stage 09 channel as the first controlled riverbed test.
+- Configure wetland or rock weight-channel output only after the banks are stable.
+- Keep the river local until preview, collision, and compiled-section behavior are validated.
 - Ocean can remain independent because it does not need to terraform the terrain.
 
 ## 12. Conversion back to classic Landscape — DEFERRED
@@ -120,4 +125,4 @@ The tutorial demonstrates conversion workflows, but Aether should remain Mesh Te
 
 ## Current checkpoint
 
-**AetherFlight matches the tutorial through the Texture Patch Modifier stage. The next tutorial-native operation is the regular Spline Modifier. Stage 09 code is now prepared; run the Stage 09 launcher, inspect the channel with Build To, then commit the resulting map/external-actor assets before beginning Spline Remesh or water integration.**
+**AetherFlight matches the tutorial through the regular Spline Modifier stage. Stage 10 Spline Remesh code is now prepared. Run the Stage 10 launcher, compare the channel with the remesh disabled/enabled in Build To, then commit the resulting map/external-actor assets before beginning water-body integration.**
