@@ -7,9 +7,6 @@ STAGE_LABEL = "Aether_VideoStage10_SplineRemesh"
 TAG = "AetherVideoSplineRemeshStage"
 REPORT_PATH = Path(unreal.Paths.project_saved_dir()) / "AetherVideoSplineRemeshInstall.txt"
 
-# Stage 09's full terrain influence reaches roughly 46 m from its centerline.
-# A 60 m radius gives the deformation enough refined topology, including banks,
-# without leaving Stage 05's 1.2 km local test region.
 SPLINE_RADIUS_CM = 6000.0
 TARGET_EDGE_LENGTH_CM = 250.0
 REMESH_ITERATIONS = 2
@@ -137,8 +134,7 @@ def try_set_property(obj, names, value, lines, required=False):
     return False
 
 
-def try_call(obj, names, args, lines, required=False):
-    errors = []
+def try_call(obj, names, args, lines):
     for name in names:
         method = getattr(obj, name, None)
         if not callable(method):
@@ -148,10 +144,7 @@ def try_call(obj, names, args, lines, required=False):
             record(lines, f"Called {obj.get_name()}.{name}{args}")
             return True, result
         except Exception as exc:
-            errors.append(f"{name}: {exc}")
             record(lines, f"Call failed {obj.get_name()}.{name}: {exc}")
-    if required:
-        raise RuntimeError(f"Could not call any of {names}. Errors={errors}")
     return False, None
 
 
@@ -187,130 +180,144 @@ def assign_mesh_partition(component, mesh_partition, lines):
         raise RuntimeError("SplineRemeshModifier could not be assigned to the Mesh Partition")
 
 
-def assign_spline_component(component, spline, lines):
-    direct = try_set_property(
-        component,
-        ("spline_ref", "spline_ptr", "spline_component", "spline"),
-        spline,
-        lines,
-    )
-    native, _ = try_call(
-        component,
-        ("set_spline_component",),
-        (spline, True),
-        lines,
-    )
-    blueprint, _ = try_call(
-        component,
-        ("bp_set_spline_component",),
-        (spline,),
-        lines,
-    )
-    if not direct and not native and not blueprint:
-        raise RuntimeError("SplineRemeshModifier could not receive the Stage 09 spline")
+def make_component_reference(source_actor, source_spline, lines):
+    reference_class = getattr(unreal, "ComponentReference", None)
+    if not reference_class:
+        raise RuntimeError("unreal.ComponentReference is unavailable")
 
-
-def configure_operation(component, lines):
-    remesh_value = resolve_enum_member(
-        "RemeshModifierOperation",
-        ("REMESH", "REMESHING"),
-        lines,
-    )
-    if remesh_value is None:
-        record(lines, "Remesh operation enum not exposed; default operation retained")
-        return "DEFAULT_RETAINED"
-
-    called, _ = try_call(
-        component,
-        ("set_current_operation",),
-        (remesh_value,),
-        lines,
-    )
-    if not called:
-        called = try_set_property(
-            component,
-            ("current_operation", "remesh_operation", "operation"),
-            remesh_value,
-            lines,
+    component_name = unreal.Name(source_spline.get_name())
+    try:
+        reference = reference_class(
+            other_actor=source_actor,
+            component_property=component_name,
         )
-    if not called:
-        record(lines, "Remesh operation could not be explicitly assigned; default retained")
-        return "DEFAULT_RETAINED"
-    return "REMESH"
+        record(lines, f"Created ComponentReference actor={actor_label(source_actor)} component={component_name}")
+        return reference
+    except Exception as constructor_exc:
+        record(lines, f"ComponentReference constructor warning={constructor_exc}")
+
+    reference = reference_class()
+    reference.set_editor_property("other_actor", source_actor)
+    reference.set_editor_property("component_property", component_name)
+    try:
+        reference.set_editor_property("path_to_component", source_spline.get_name())
+    except Exception:
+        pass
+    record(lines, f"Built ComponentReference through editor properties component={component_name}")
+    return reference
 
 
-def configure_component(component, mesh_partition, spline, lines):
+def assign_spline_component(component, source_actor, spline, lines):
+    native, _ = try_call(component, ("set_spline_component",), (spline, True), lines)
+    blueprint, _ = try_call(component, ("bp_set_spline_component",), (spline,), lines)
+    if native or blueprint:
+        return "SETTER"
+
+    reference = make_component_reference(source_actor, spline, lines)
+    try_set_property(component, ("spline_ref",), reference, lines, required=True)
+
+    try:
+        verified = component.get_editor_property("spline_ref")
+        record(lines, f"Verified spline_ref={verified}")
+    except Exception as exc:
+        record(lines, f"Spline reference verification warning={exc}")
+    return "COMPONENT_REFERENCE"
+
+
+def configure_value(component, property_names, setter_names, value, lines, required=True):
+    called, _ = try_call(component, setter_names, (value,), lines)
+    if called:
+        return "SETTER"
+    if try_set_property(component, property_names, value, lines, required=required):
+        return "PROPERTY"
+    return "UNAVAILABLE"
+
+
+def configure_component(component, mesh_partition, source_actor, spline, lines):
     assign_mesh_partition(component, mesh_partition, lines)
-    assign_spline_component(component, spline, lines)
+    spline_assignment = assign_spline_component(component, source_actor, spline, lines)
 
-    try_set_property(component, ("priority",), PRIORITY, lines, required=True)
-    try_set_property(component, ("is_disabled", "disabled"), False, lines, required=True)
-    try_set_property(component, ("spline_radius",), SPLINE_RADIUS_CM, lines, required=True)
-    try_set_property(component, ("draw_spline_radius", "b_draw_spline_radius"), True, lines)
-    try_set_property(component, ("spline_radius_samples",), 32, lines)
-    try_set_property(
+    configure_value(component, ("priority",), (), PRIORITY, lines)
+    configure_value(component, ("is_disabled", "disabled"), (), False, lines)
+    configure_value(component, ("spline_radius",), (), SPLINE_RADIUS_CM, lines)
+    configure_value(component, ("draw_spline_radius", "b_draw_spline_radius"), (), True, lines, required=False)
+    configure_value(component, ("spline_radius_samples",), (), 32, lines, required=False)
+
+    remesh_value = resolve_enum_member("RemeshModifierOperation", ("REMESH",), lines)
+    if remesh_value is None:
+        raise RuntimeError("RemeshModifierOperation.REMESH is unavailable")
+    operation_assignment = configure_value(
         component,
-        ("create_volume_from_closed_spline", "b_create_volume_from_closed_spline"),
+        ("current_operation", "remesh_operation", "operation"),
+        ("set_current_operation",),
+        remesh_value,
+        lines,
+    )
+
+    use_target_assignment = configure_value(
+        component,
+        ("use_target_edge_length", "b_use_target_edge_length"),
+        ("set_use_target_edge_length",),
+        True,
+        lines,
+    )
+    edge_assignment = configure_value(
+        component,
+        ("target_edge_length",),
+        ("set_target_edge_length",),
+        TARGET_EDGE_LENGTH_CM,
+        lines,
+    )
+    iterations_assignment = configure_value(
+        component,
+        ("remesh_iterations",),
+        ("set_remesh_iterations",),
+        REMESH_ITERATIONS,
+        lines,
+    )
+    smoothing_assignment = configure_value(
+        component,
+        ("vertex_smoothing", "b_vertex_smoothing"),
+        ("set_vertex_smoothing",),
         False,
         lines,
     )
-    try_set_property(component, ("draw_surface", "b_draw_surface"), False, lines)
-
-    operation = configure_operation(component, lines)
-
-    try_call(
+    resample_assignment = configure_value(
         component,
-        ("set_use_target_edge_length",),
-        (True,),
-        lines,
-        required=True,
-    )
-    try_call(
-        component,
-        ("set_target_edge_length",),
-        (TARGET_EDGE_LENGTH_CM,),
-        lines,
-        required=True,
-    )
-    try_call(
-        component,
-        ("set_remesh_iterations",),
-        (REMESH_ITERATIONS,),
-        lines,
-    )
-    try_call(
-        component,
-        ("set_vertex_smoothing",),
-        (False,),
-        lines,
-    )
-    try_call(
-        component,
+        ("resample_uvs", "b_resample_uvs"),
         ("set_resample_uvs",),
-        (True,),
+        True,
         lines,
+        required=False,
     )
-    try_call(
+    density_assignment = configure_value(
         component,
+        ("use_density_weight_channel", "b_use_density_weight_channel"),
         ("set_use_density_weight_channel",),
-        (False,),
+        False,
         lines,
+        required=False,
     )
 
-    updated, _ = try_call(
-        component,
-        ("update_spline_data",),
-        (),
-        lines,
-    )
+    updated, _ = try_call(component, ("update_spline_data",), (), lines)
     if not updated:
-        record(lines, "UpdateSplineData is not Python-callable; modifier initialization will refresh it in the editor.")
+        record(lines, "UpdateSplineData is not Python-callable; reload or the editor button can refresh cached spline data.")
 
     try:
         component.modify()
     except Exception:
         pass
-    return operation
+
+    return {
+        "spline": spline_assignment,
+        "operation": operation_assignment,
+        "use_target": use_target_assignment,
+        "edge": edge_assignment,
+        "iterations": iterations_assignment,
+        "smoothing": smoothing_assignment,
+        "resample_uvs": resample_assignment,
+        "density": density_assignment,
+    }
 
 
 def spline_length(spline):
@@ -381,7 +388,13 @@ def main():
     actor.set_editor_property("tags", [unreal.Name(TAG)])
 
     component = add_component_to_actor(actor, modifier_class, lines)
-    operation = configure_component(component, mesh_partition, source_spline, lines)
+    assignments = configure_component(
+        component,
+        mesh_partition,
+        source_actor,
+        source_spline,
+        lines,
+    )
 
     saved = save_map(lines)
     record(lines, f"Map save={'PASS' if saved else 'CHECK'}")
@@ -390,11 +403,14 @@ def main():
     record(lines, f"SPLINE_REMESH_ACTOR={STAGE_LABEL}")
     record(lines, "SPLINE_REMESH_COMPONENT_CLASS=/Script/MeshPartitionEditor.SplineRemeshModifier")
     record(lines, f"SOURCE_SPLINE_ACTOR={SOURCE_SPLINE_LABEL}")
-    record(lines, f"OPERATION={operation}")
+    record(lines, "OPERATION=REMESH")
     record(lines, f"SPLINE_RADIUS_CM={SPLINE_RADIUS_CM}")
     record(lines, f"TARGET_EDGE_LENGTH_CM={TARGET_EDGE_LENGTH_CM}")
+    record(lines, f"REMESH_ITERATIONS={REMESH_ITERATIONS}")
     record(lines, f"PRIORITY={PRIORITY}")
-    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, place Stage10 before Stage09 in Build To by priority, toggle Stage10 off/on, and inspect bank smoothness and triangle density along the channel.")
+    for key, value in assignments.items():
+        record(lines, f"ASSIGNMENT_{key.upper()}={value}")
+    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, select Aether_VideoStage10_SplineRemesh, click Update Spline Data if available, include Stage10 and Stage09 in Build To, then compare wireframe density with Stage10 disabled/enabled.")
     record(lines, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
