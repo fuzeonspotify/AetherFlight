@@ -35,7 +35,8 @@ MODIFIER_CLASS_NAMES = [
 ]
 
 MODIFIER_KEYWORDS = {
-    "Remesh/Tessellate": ("RemeshModifier", "SplineRemeshModifier"),
+    "Local Remesh/Tessellate": ("RemeshModifier",),
+    "Spline Remesh/Tessellate": ("SplineRemeshModifier",),
     "Sculpt/Paint": ("Sculpt", "EditableModifier", "ProjectMeshLayers"),
     "Boolean": ("BooleanModifier",),
     "Spline": ("SplineModifier",),
@@ -134,21 +135,17 @@ def main():
     log(lines, "")
     log(lines, "UE 5.8 MODIFIER CLASS AVAILABILITY")
     log(lines, "-" * 96)
-    available_classes = {}
     for class_name in MODIFIER_CLASS_NAMES:
         cls = getattr(unreal, class_name, None)
-        available_classes[class_name] = cls
         log(lines, f"{'YES' if cls else 'NO '} | unreal.{class_name}")
 
-    # Search every Python-exposed Unreal name as a fallback. This catches minor
-    # naming changes between Preview and release builds.
     exposed_names = list(dir(unreal))
     for category, keywords in MODIFIER_KEYWORDS.items():
         matches = sorted(
             name for name in exposed_names
             if any(keyword.lower() in name.lower() for keyword in keywords)
         )
-        log(lines, f"{category:20s} exposed names={', '.join(matches[:30]) if matches else 'None'}")
+        log(lines, f"{category:26s} exposed names={', '.join(matches[:30]) if matches else 'None'}")
 
     log(lines, "")
     log(lines, "MODIFIERS CURRENTLY PLACED IN AETHERWORLD")
@@ -167,7 +164,8 @@ def main():
         for match in matches[:30]:
             log(lines, f"  {match}")
 
-    remesh_count = len(placed_by_category["Remesh/Tessellate"])
+    local_remesh_count = len(placed_by_category["Local Remesh/Tessellate"])
+    spline_remesh_count = len(placed_by_category["Spline Remesh/Tessellate"])
     sculpt_count = len(placed_by_category["Sculpt/Paint"])
     boolean_count = len(placed_by_category["Boolean"])
     spline_count = len(placed_by_category["Spline"])
@@ -180,24 +178,31 @@ def main():
     log(lines, f"01 Setup/plugins/open-world map        = {'COMPLETE' if base_pass else 'CHECK'}")
     log(lines, f"02 Heightmap/Mesh Partition base       = {'COMPLETE' if base_pass else 'CHECK'}")
     log(lines, f"03 MPD/material/weight assets          = {'COMPLETE' if asset_pass else 'CHECK'}")
-    log(lines, f"04 Local Remesh/Tessellate modifiers   = {'COMPLETE' if remesh_count else 'NEXT'}")
-    log(lines, f"05 Sculpt and Paint modifiers          = {'STARTED' if sculpt_count else 'NOT STARTED'}")
-    log(lines, f"06 Static Mesh / Boolean terrain work  = {'STARTED' if boolean_count else 'NOT STARTED'}")
-    log(lines, f"07 Texture modifiers                   = {'STARTED' if texture_count else 'NOT STARTED'}")
-    log(lines, f"08 Spline modifiers                    = {'STARTED' if spline_count else 'NOT STARTED'}")
-    log(lines, f"09 Water terrain modifiers             = {'STARTED' if water_count else 'NOT STARTED'}")
-    log(lines, "10 Convert to classic Landscape         = DEFERRED BY DESIGN")
+    log(lines, f"04 Local Remesh/Tessellate modifier    = {'COMPLETE' if local_remesh_count else 'NEXT'}")
+    log(lines, f"05 Sculpt and Paint modifier           = {'COMPLETE' if sculpt_count else 'NOT STARTED'}")
+    log(lines, f"06 Static Mesh / Boolean terrain work  = {'COMPLETE' if boolean_count else 'NOT STARTED'}")
+    log(lines, f"07 Texture Patch modifier              = {'COMPLETE' if texture_count else 'NOT STARTED'}")
+    log(lines, f"08 Spline terrain modifier             = {'COMPLETE' if spline_count else 'NOT STARTED'}")
+    log(lines, f"09 Spline Remesh modifier              = {'COMPLETE' if spline_remesh_count else 'NOT STARTED'}")
+    log(lines, f"10 Water terrain modifiers             = {'STARTED' if water_count else 'NOT STARTED'}")
+    log(lines, "11 Convert to classic Landscape         = DEFERRED BY DESIGN")
 
-    next_stage = "LOCAL_REMESH_TESSELLATE" if remesh_count == 0 else (
+    next_stage = "LOCAL_REMESH_TESSELLATE" if local_remesh_count == 0 else (
         "SCULPT_PAINT" if sculpt_count == 0 else (
             "BOOLEAN_CAVE" if boolean_count == 0 else (
-                "TEXTURE_MODIFIER" if texture_count == 0 else "SPLINE_MODIFIER"
+                "TEXTURE_MODIFIER" if texture_count == 0 else (
+                    "SPLINE_MODIFIER" if spline_count == 0 else (
+                        "SPLINE_REMESH" if spline_remesh_count == 0 else (
+                            "WATER_TERRAIN" if water_count == 0 else "VIDEO_WORKFLOW_COMPLETE"
+                        )
+                    )
+                )
             )
         )
     )
     log(lines, "")
     log(lines, f"AETHER_VIDEO_NEXT_STAGE={next_stage}")
-    log(lines, "The first installer intentionally targets a small local zone so it does not rebuild the entire 48 km world.")
+    log(lines, "Modifier stages intentionally remain local until their editor preview is verified; no audit starts a whole-world compiled build.")
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
