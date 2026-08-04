@@ -2,7 +2,7 @@
 
 #include "AetherEnvironmentTestActor.h"
 #include "AetherFlightHUD.h"
-#include "AetherMapWideEnvironmentActor.h"
+#include "AetherVerifiedEnvironmentActor.h"
 #include "CinematicFlightPawn.h"
 #include "EngineUtils.h"
 #include "Misc/CommandLine.h"
@@ -59,27 +59,26 @@ void AAetherFlightGameMode::StartPlay()
     }
     else if (bRunMapEnvironment)
     {
-        AAetherMapWideEnvironmentActor* MapEnvironment = nullptr;
-        for (TActorIterator<AAetherMapWideEnvironmentActor> It(GetWorld()); It; ++It)
+        AAetherVerifiedEnvironmentActor* VerifiedEnvironment = nullptr;
+        for (TActorIterator<AAetherVerifiedEnvironmentActor> It(GetWorld()); It; ++It)
         {
-            MapEnvironment = *It;
+            VerifiedEnvironment = *It;
             break;
         }
-        if (!MapEnvironment)
+        if (!VerifiedEnvironment)
         {
-            MapEnvironment = GetWorld()->SpawnActor<AAetherMapWideEnvironmentActor>();
+            VerifiedEnvironment = GetWorld()->SpawnActor<AAetherVerifiedEnvironmentActor>();
         }
 
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Map Environment] Opt-in persistent map-wide streaming enabled."));
+            TEXT("[Aether Verified Environment] Exact audited PCG tree and boulder streaming enabled."));
     }
     else
     {
-        // After two Renderer crashes, ordinary editor and Play launches remain
-        // terrain-only. The dedicated launcher supplies -AetherMapEnvironment
-        // for the repaired persistent-HISM implementation.
+        // Ordinary editor and Play launches remain terrain-only. The dedicated
+        // launcher supplies -AetherMapEnvironment for the verified implementation.
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Map Environment] Stable terrain-only launch. Use the dedicated map-wide launcher to enable foliage."));
+            TEXT("[Aether Verified Environment] Stable terrain-only launch. Use the map-wide launcher to enable foliage."));
     }
 
     // ACinematicFlightPawn::BeginPlay owns the normal streaming-source startup
