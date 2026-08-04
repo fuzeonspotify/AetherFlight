@@ -12,7 +12,7 @@ $editor = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor
 $logPath = Join-Path $projectRoot "Saved\Logs\AetherFlight.log"
 
 if (Get-Process UnrealEditor -ErrorAction SilentlyContinue) {
-    throw "Close every Unreal Editor and Crash Reporter window before building the map-wide environment."
+    throw "Close every Unreal Editor and Crash Reporter window before building the cinematic map-wide environment."
 }
 if (!(Test-Path -LiteralPath $project)) {
     throw "AetherFlight.uproject was not found: $project"
@@ -25,13 +25,15 @@ if (!(Test-Path -LiteralPath $editor)) {
 }
 
 Write-Host ""
-Write-Host "Building the verified Aether map-wide environment..."
-Write-Host "Exact audited trees: PCG_Tree_03 and PCG_Tree_01"
-Write-Host "Exact audited rock: PCG_Boulder_02"
+Write-Host "Building the Aether cinematic map-wide environment..."
+Write-Host "Trees: DZ Pine, Aspen, Cork Oak, and Coconut/Palm"
+Write-Host "Shrubs: GV Free Shrubs Pack A and B"
+Write-Host "Ground plant: Nanite Plants Sample Abelia"
+Write-Host "Rock: PCG Boulder until a cinematic rock pack is installed"
 Write-Host "Coverage: entire 48 km AetherWorld through a reusable local ring"
-Write-Host "Renderer design: three persistent HISM components; no runtime component creation or destruction"
+Write-Host "Renderer design: eight persistent HISM components; no runtime component creation or destruction"
 Write-Host "Runtime: one 1.6 km terrain chunk generated per second"
-Write-Host "Density per chunk: up to 82 trees and 15 rocks"
+Write-Host "Density per chunk: up to 72 trees, 28 shrubs, 20 plants, and 10 rocks"
 Write-Host "Renderer safety: no foliage collision, dynamic shadows, distance fields, or density scaling"
 Write-Host ""
 
@@ -45,18 +47,18 @@ Write-Host ""
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "AETHER VERIFIED ENVIRONMENT BUILD FAILED" -ForegroundColor Red
+    Write-Host "AETHER CINEMATIC ENVIRONMENT BUILD FAILED" -ForegroundColor Red
     if (Test-Path -LiteralPath $logPath) {
-        Get-Content -LiteralPath $logPath -Tail 420 |
+        Get-Content -LiteralPath $logPath -Tail 460 |
             Select-String -Pattern "error C|fatal error|AetherVerifiedEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,18
     }
-    throw "Aether verified environment build failed with exit code $LASTEXITCODE."
+    throw "Aether cinematic environment build failed with exit code $LASTEXITCODE."
 }
 
 Write-Host ""
-Write-Host "AETHER VERIFIED ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
+Write-Host "AETHER CINEMATIC ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
 Write-Host "Launching AetherWorld with -AetherMapEnvironment..."
-Write-Host "Press Play and wait for: AETHER VERIFIED FOLIAGE VISIBLE"
+Write-Host "Press Play and wait for: AETHER CINEMATIC ENVIRONMENT"
 Write-Host "A normal editor launch remains terrain-only."
 Write-Host ""
 
