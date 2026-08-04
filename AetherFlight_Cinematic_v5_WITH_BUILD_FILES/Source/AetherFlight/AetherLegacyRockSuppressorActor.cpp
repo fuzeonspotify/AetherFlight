@@ -36,13 +36,14 @@ void AAetherLegacyRockSuppressorActor::SuppressLegacyRocks()
         return;
     }
 
+    const FName LegacyRockComponentName(TEXT("CinematicRocks"));
     for (TActorIterator<AAetherVerifiedEnvironmentActor> It(GetWorld()); It; ++It)
     {
         TArray<UHierarchicalInstancedStaticMeshComponent*> Components;
         It->GetComponents<UHierarchicalInstancedStaticMeshComponent>(Components);
         for (UHierarchicalInstancedStaticMeshComponent* Component : Components)
         {
-            if (!Component || Component->GetFName() != TEXT("CinematicRocks"))
+            if (!Component || Component->GetFName() != LegacyRockComponentName)
             {
                 continue;
             }
