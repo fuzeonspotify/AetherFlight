@@ -25,9 +25,11 @@ if (!(Test-Path -LiteralPath $editor)) {
 }
 
 Write-Host ""
-Write-Host "Building the Aether Mesh Terrain ecosystem test..."
-Write-Host "Test zone: 3 km radius around X=-400000, Y=400000"
-Write-Host "Spawn: 20,000 ft, 1.2 km west of the test-zone center"
+Write-Host "Building the crash-safe Aether Mesh Terrain ecosystem test..."
+Write-Host "Test zone: 1.2 km radius around X=-400000, Y=400000"
+Write-Host "Spawn: 12,000 ft, 1.8 km west of the test-zone center"
+Write-Host "Budget: 220 trees, 70 shrubs, 55 rocks, added in small timed batches"
+Write-Host "Shadows and distance-field lighting are disabled for this approval pass"
 Write-Host ""
 
 & $buildBat `
@@ -42,21 +44,23 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "AETHER ENVIRONMENT TEST BUILD FAILED" -ForegroundColor Red
     if (Test-Path -LiteralPath $logPath) {
-        Get-Content -LiteralPath $logPath -Tail 260 |
-            Select-String -Pattern "error C|fatal error|AetherEnvironmentTestActor|AetherFlightGameMode" -Context 4,12
+        Get-Content -LiteralPath $logPath -Tail 300 |
+            Select-String -Pattern "error C|fatal error|AetherEnvironmentTestActor|AetherFlightGameMode" -Context 4,14
     }
     throw "Aether environment test build failed with exit code $LASTEXITCODE."
 }
 
 Write-Host ""
 Write-Host "AETHER ENVIRONMENT TEST BUILD SUCCEEDED" -ForegroundColor Green
-Write-Host "Launching AetherWorld..."
-Write-Host "Look for: AETHER TEST READY // trees // shrubs // rocks"
+Write-Host "Launching AetherWorld with the opt-in safe test flag..."
+Write-Host "Look for: AETHER SAFE TEST READY // trees // shrubs // rocks"
+Write-Host "Normal editor launches will not run the environment test."
 Write-Host ""
 
 $arguments = @(
     ('"{0}"' -f $project),
     "/Game/Maps/AetherWorld",
+    "-AetherEnvironmentTest",
     "-nosound",
     "-log"
 )
