@@ -112,7 +112,7 @@ private:
     FTimerHandle StreamingTimer;
     TArray<FIntPoint> PendingChunks;
     TSet<FIntPoint> GeneratedChunks;
-    FIntPoint CurrentCenterChunk = FIntPoint::ZeroValue;
+    FIntPoint CurrentCenterChunk = FIntPoint(0, 0);
     int32 PrepareAttempts = 0;
     int32 TotalTrees = 0;
     int32 TotalShrubs = 0;
