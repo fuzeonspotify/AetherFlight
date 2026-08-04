@@ -29,6 +29,13 @@ AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/AudioSource/Jet/
 AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/SenseiTerrain/
 AetherFlight_Cinematic_v5_WITH_BUILD_FILES/SourceAssets/ThirdParty/SenseiTerrain*.zip
 
+# Locally installed Fab/environment packs. Keep these installed in Unreal, but
+# do not redistribute the source assets through this public repository.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/DZ_Assets/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/GV_FreeShrubsPack/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/Nanite_Plants_Sample_Collection/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/Rock_Collection_04/
+
 # Visual Studio / Rider / VS Code generated state
 .vs/
 .idea/
