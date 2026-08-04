@@ -8,6 +8,7 @@
 class UHierarchicalInstancedStaticMeshComponent;
 class USceneComponent;
 class UStaticMesh;
+struct FHitResult;
 
 /**
  * Deterministic map-wide vegetation and rock streaming for AetherWorld.
