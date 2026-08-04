@@ -1,9 +1,10 @@
 """Apply verified Aether textures to the installed Sensei Terrain instance.
 
 The exact parameter names in this file come from the read-only UE 5.8 audit of
-MI_AetherTerrain_Sensei. The previous updater guessed names such as
-"Normal Texture A"; those parameters do not exist in the installed asset and
-therefore changed nothing.
+MI_AetherTerrain_Sensei. The updater now discovers the association used by each
+parameter (Global, Layer, or Blend) before applying an override. This is needed
+because the audited Sensei parameters are not writable through UE's default
+GLOBAL_PARAMETER association.
 
 This update changes only material-instance texture/scalar overrides. It does
 not change terrain geometry, collision, Mesh Partition resolution, transformer
@@ -23,7 +24,6 @@ EXPECTED_INSTANCE_PATH = (
 TEXTURE_PACKAGE = "/Game/Aether/ProductionTerrain/Textures"
 REPORT_PATH = Path(unreal.Paths.project_saved_dir()) / "AetherSurfaceDetailReport.txt"
 
-# Verified A-E layer order used by the existing Aether Sensei integration.
 LAYER_MAP = {
     "A": "Grass",
     "B": "Rock",
@@ -32,13 +32,18 @@ LAYER_MAP = {
     "E": "Snow",
 }
 
-# These exact names were returned by MaterialEditingLibrary in the audit.
 TEXTURE_PARAMETER_FORMATS = {
     "Albedo": "Albedo Color {slot}",
     "Normal": "Normal {slot}",
     "Roughness": "Roughness {slot}",
 }
 NORMAL_STRENGTH = 0.78
+
+ASSOCIATIONS = (
+    ("Global", unreal.MaterialParameterAssociation.GLOBAL_PARAMETER),
+    ("Layer", unreal.MaterialParameterAssociation.LAYER_PARAMETER),
+    ("Blend", unreal.MaterialParameterAssociation.BLEND_PARAMETER),
+)
 
 
 def log(message: str) -> None:
@@ -59,34 +64,42 @@ def load_texture(layer_name: str, texture_type: str):
     return texture
 
 
-def get_texture(instance, parameter_name: str):
+def texture_value(instance, parameter_name: str, association):
     return unreal.MaterialEditingLibrary.get_material_instance_texture_parameter_value(
-        instance, parameter_name
+        instance, parameter_name, association
     )
 
 
-def get_scalar(instance, parameter_name: str) -> float:
+def scalar_value(instance, parameter_name: str, association) -> float:
     return float(
         unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(
-            instance, parameter_name
+            instance, parameter_name, association
         )
     )
 
 
-def set_texture(instance, parameter_name: str, texture) -> None:
-    result = unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(
-        instance, parameter_name, texture
+def is_overridden(instance, parameter_name: str, association) -> bool:
+    getter = getattr(
+        unreal.MaterialEditingLibrary,
+        "is_material_instance_parameter_overridden",
+        None,
     )
-    if result is False:
-        raise RuntimeError(f"Sensei rejected texture parameter: {parameter_name}")
+    if getter is None:
+        return False
+    try:
+        return bool(getter(instance, parameter_name, association))
+    except Exception:
+        return False
 
 
-def set_scalar(instance, parameter_name: str, value: float) -> None:
-    result = unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
-        instance, parameter_name, float(value)
+def set_override(instance, parameter_name: str, enabled: bool, association) -> None:
+    setter = getattr(
+        unreal.MaterialEditingLibrary,
+        "set_material_instance_parameter_override",
+        None,
     )
-    if result is False:
-        raise RuntimeError(f"Sensei rejected scalar parameter: {parameter_name}")
+    if setter is not None:
+        setter(instance, parameter_name, bool(enabled), association)
 
 
 def same_asset(left, right) -> bool:
@@ -95,16 +108,90 @@ def same_asset(left, right) -> bool:
     return left.get_path_name() == right.get_path_name()
 
 
-def restore_previous(instance, previous_textures, previous_scalars) -> None:
-    for parameter_name, texture in previous_textures.items():
-        if texture is not None:
-            unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(
-                instance, parameter_name, texture
-            )
-    for parameter_name, value in previous_scalars.items():
-        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
-            instance, parameter_name, float(value)
+def apply_texture(instance, parameter_name: str, desired_texture):
+    attempts = []
+    for association_name, association in ASSOCIATIONS:
+        previous = texture_value(instance, parameter_name, association)
+        previous_override = is_overridden(instance, parameter_name, association)
+        result = unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(
+            instance, parameter_name, desired_texture, association
         )
+        attempts.append(f"{association_name}={result}")
+        if result:
+            return {
+                "kind": "texture",
+                "name": parameter_name,
+                "association_name": association_name,
+                "association": association,
+                "previous": previous,
+                "previous_override": previous_override,
+                "desired": desired_texture,
+            }
+    raise RuntimeError(
+        f"Sensei rejected texture parameter {parameter_name} for all associations "
+        f"({', '.join(attempts)})"
+    )
+
+
+def apply_scalar(instance, parameter_name: str, desired_value: float):
+    attempts = []
+    for association_name, association in ASSOCIATIONS:
+        previous = scalar_value(instance, parameter_name, association)
+        previous_override = is_overridden(instance, parameter_name, association)
+        result = unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            instance, parameter_name, float(desired_value), association
+        )
+        attempts.append(f"{association_name}={result}")
+        if result:
+            return {
+                "kind": "scalar",
+                "name": parameter_name,
+                "association_name": association_name,
+                "association": association,
+                "previous": previous,
+                "previous_override": previous_override,
+                "desired": float(desired_value),
+            }
+    raise RuntimeError(
+        f"Sensei rejected scalar parameter {parameter_name} for all associations "
+        f"({', '.join(attempts)})"
+    )
+
+
+def verify_state(instance, state) -> bool:
+    if state["kind"] == "texture":
+        return same_asset(
+            texture_value(instance, state["name"], state["association"]),
+            state["desired"],
+        )
+    return (
+        abs(
+            scalar_value(instance, state["name"], state["association"])
+            - state["desired"]
+        )
+        <= 0.0001
+    )
+
+
+def restore_states(instance, states) -> None:
+    for state in reversed(states):
+        name = state["name"]
+        association = state["association"]
+        if state["previous_override"]:
+            if state["kind"] == "texture":
+                previous = state["previous"]
+                if previous is not None:
+                    unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(
+                        instance, name, previous, association
+                    )
+            else:
+                unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+                    instance, name, float(state["previous"]), association
+                )
+            set_override(instance, name, True, association)
+        else:
+            set_override(instance, name, False, association)
+
     try:
         instance.post_edit_change()
     except Exception:
@@ -144,60 +231,51 @@ def main() -> None:
         f"Normal Strength {slot}": NORMAL_STRENGTH for slot in LAYER_MAP
     }
 
-    # Capture current values so a rejected parameter can be rolled back in the
-    # same run instead of leaving a partially configured material instance.
-    previous_textures = {
-        name: get_texture(instance, name) for name in desired_textures
-    }
-    previous_scalars = {
-        name: get_scalar(instance, name) for name in desired_scalars
-    }
-
+    applied_states = []
     try:
         for parameter_name, texture in desired_textures.items():
-            set_texture(instance, parameter_name, texture)
+            applied_states.append(apply_texture(instance, parameter_name, texture))
         for parameter_name, value in desired_scalars.items():
-            set_scalar(instance, parameter_name, value)
+            applied_states.append(apply_scalar(instance, parameter_name, value))
 
         try:
             instance.post_edit_change()
         except Exception:
             pass
 
-        texture_verified = sum(
-            same_asset(get_texture(instance, name), texture)
-            for name, texture in desired_textures.items()
-        )
-        scalar_verified = sum(
-            abs(get_scalar(instance, name) - value) <= 0.0001
-            for name, value in desired_scalars.items()
-        )
-
-        if texture_verified != len(desired_textures):
+        verified = sum(verify_state(instance, state) for state in applied_states)
+        if verified != len(applied_states):
             raise RuntimeError(
-                f"Texture verification failed: {texture_verified}/{len(desired_textures)}"
-            )
-        if scalar_verified != len(desired_scalars):
-            raise RuntimeError(
-                f"Scalar verification failed: {scalar_verified}/{len(desired_scalars)}"
+                f"Parameter verification failed: {verified}/{len(applied_states)}"
             )
 
         if not unreal.EditorAssetLibrary.save_loaded_asset(instance, False):
             raise RuntimeError(f"Failed to save {EXPECTED_INSTANCE_PATH}")
     except Exception:
-        restore_previous(instance, previous_textures, previous_scalars)
+        restore_states(instance, applied_states)
         raise
 
+    association_counts = {}
+    for state in applied_states:
+        key = state["association_name"]
+        association_counts[key] = association_counts.get(key, 0) + 1
+    association_lines = [
+        f"  {name}: {count}" for name, count in sorted(association_counts.items())
+    ]
     mapping_lines = [
         f"  {slot}: {layer_name}" for slot, layer_name in LAYER_MAP.items()
     ]
+
     report = (
         "Aether verified Sensei surface update complete.\n\n"
         f"Material: {instance.get_path_name()}\n"
-        f"Texture parameters verified: {texture_verified}/{len(desired_textures)}\n"
-        f"Normal-strength parameters verified: {scalar_verified}/{len(desired_scalars)}\n"
+        f"Parameters verified: {verified}/{len(applied_states)}\n"
+        f"Texture parameters: {len(desired_textures)}\n"
+        f"Normal-strength parameters: {len(desired_scalars)}\n"
         f"Normal strength: {NORMAL_STRENGTH}\n\n"
-        "Layer mapping:\n"
+        "Resolved parameter associations:\n"
+        + "\n".join(association_lines)
+        + "\n\nLayer mapping:\n"
         + "\n".join(mapping_lines)
         + "\n\n"
         "Updated maps: Albedo, Normal, Roughness\n"
