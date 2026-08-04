@@ -10,7 +10,7 @@ $project = Join-Path $projectRoot "AetherFlight.uproject"
 $editor = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe"
 $auditScript = Join-Path $projectRoot "Content\Python\AuditAetherMeshTerrainRiverAPI_UE58_v2.py"
 $auditReport = Join-Path $projectRoot "Saved\AetherMeshTerrainRiverAPIAudit.txt"
-$installScript = Join-Path $projectRoot "Content\Python\InstallAetherVideoRiverStage_UE58.py"
+$installScript = Join-Path $projectRoot "Content\Python\InstallAetherVideoRiverStage_UE58_v2.py"
 $installReport = Join-Path $projectRoot "Saved\AetherVideoRiverInstall.txt"
 
 if (Get-Process UnrealEditor -ErrorAction SilentlyContinue) {
@@ -61,7 +61,7 @@ if ($auditText -notmatch "AETHER_MESH_TERRAIN_RIVER_API=PASS") {
 }
 
 Write-Host "Installing Stage 11: local WaterBodyRiver and WaterZone along the repaired Stage 09 channel..."
-Write-Host "River: 20 m total width, 3 m depth, 3 m above the Stage 09 channel."
+Write-Host "River: requested 20 m total width, engine-default depth metadata, 3 m above the Stage 09 channel."
 Write-Host "RiverModifier priority: 50, after Stage 09. Water Zone extent: 1.6 km."
 Write-Host "Safety: this saves AetherWorld but does NOT start the compiled Mesh Partition build."
 Write-Host ""
