@@ -1,5 +1,6 @@
 #include "AetherFlightGameMode.h"
 
+#include "AetherEnvironmentDiversityFloorActor.h"
 #include "AetherEnvironmentTestActor.h"
 #include "AetherFlightHUD.h"
 #include "AetherVerifiedEnvironmentActor.h"
@@ -70,15 +71,26 @@ void AAetherFlightGameMode::StartPlay()
             VerifiedEnvironment = GetWorld()->SpawnActor<AAetherVerifiedEnvironmentActor>();
         }
 
+        AAetherEnvironmentDiversityFloorActor* DiversityFloor = nullptr;
+        for (TActorIterator<AAetherEnvironmentDiversityFloorActor> It(GetWorld()); It; ++It)
+        {
+            DiversityFloor = *It;
+            break;
+        }
+        if (!DiversityFloor)
+        {
+            DiversityFloor = GetWorld()->SpawnActor<AAetherEnvironmentDiversityFloorActor>();
+        }
+
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Verified Environment] Exact audited PCG tree and boulder streaming enabled."));
+            TEXT("[Aether Cinematic Environment] Map-wide streaming plus local species diversity floor enabled."));
     }
     else
     {
         // Ordinary editor and Play launches remain terrain-only. The dedicated
-        // launcher supplies -AetherMapEnvironment for the verified implementation.
+        // launcher supplies -AetherMapEnvironment for the cinematic environment.
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Verified Environment] Stable terrain-only launch. Use the map-wide launcher to enable foliage."));
+            TEXT("[Aether Cinematic Environment] Stable terrain-only launch. Use the map-wide launcher to enable vegetation."));
     }
 
     // ACinematicFlightPawn::BeginPlay owns the normal streaming-source startup
