@@ -2,7 +2,7 @@
 
 Source tutorial: Unreal Sensei, **How to Use Unreal Engine's New Landscape System — Mesh Terrain Tutorial** (`Lhj2LutYNjA`).
 
-This roadmap follows the tutorial as a complete workflow rather than starting from the shared timestamp. It also separates tutorial-native Mesh Terrain work from AetherFlight's custom production systems.
+This roadmap follows the tutorial as a complete workflow and separates tutorial-native Mesh Terrain work from AetherFlight's custom production systems.
 
 ## 1. Project and Mesh Terrain setup — COMPLETE
 
@@ -31,7 +31,7 @@ This roadmap follows the tutorial as a complete workflow rather than starting fr
 
 ## 4. Foliage and environmental assets — COMPLETE CUSTOM EXTENSION
 
-This is not the tutorial's modifier workflow, but it is now production-ready infrastructure:
+This is outside the tutorial's modifier sequence, but the infrastructure is production-ready:
 
 - DZ Pine, Aspen, Cork Oak, and Coconut/Palm.
 - GV Shrub A and Shrub B.
@@ -39,58 +39,85 @@ This is not the tutorial's modifier workflow, but it is now production-ready inf
 - All seven Environment — Rock Collection 04 meshes.
 - Persistent HISM streaming, local diversity floor, and runtime audits.
 
-## 5. Local topology control with Remesh/Tessellate — NEXT
+## 5. Local topology control with Remesh/Tessellate — COMPLETE
 
-The tutorial's next missing foundation is local resolution control. Aether currently relies on the imported base resolution everywhere.
+Actor: `Aether_VideoStage05_LocalRemesh`
 
-Planned first feature:
+- A non-destructive 1.2 km local Remesh zone was installed away from the flight spawn.
+- Target edge length was reduced to approximately 6 m locally.
+- The rest of the 48 km world remains at the imported base resolution.
+- Rock Collection 04 markers identify the test area.
+- The compiled whole-world Mesh Partition build was not started.
 
-- Create a small non-destructive local Remesh modifier zone away from the flight spawn.
-- Increase topology only around a dedicated terrain-feature test site.
-- Keep the rest of the 48 km world at its current base resolution.
-- Validate editor preview build time before any compiled Mesh Partition rebuild.
+## 6. Sculpt and paint modifiers — COMPLETE
 
-## 6. Sculpt and paint modifiers — NOT STARTED
+Actor: `Aether_VideoStage06_SculptPaint`
 
-After local topology is validated:
+- A 900 m × 900 m Brush/ProjectMeshLayers modifier was placed inside Stage 05.
+- Terrain sculpting was performed.
+- Texture painting and material-layer painting were completed.
+- Painted channels remain available for terrain material and later biome control.
 
-- Add a Sculpt modifier over the local test site.
-- Test height sculpting without altering the imported base terrain.
-- Paint existing Aether weight channels inside the modifier.
-- Use the painted channels later for material and foliage control.
+## 7. Static Mesh and Boolean modifiers — COMPLETE
 
-## 7. Static Mesh and Boolean modifiers — NOT STARTED
+Actor: `Aether_VideoStage07_BooleanCave`
 
-After Remesh/Sculpt validation:
+- A subtractive static-mesh Boolean cave/tunnel was installed.
+- The cutter remains inside the verified local Remesh zone.
+- Bounds expansion, edge simplification, and shared-edge welding are configured.
+- The cave stage was inspected and retained.
 
-- Use a simple Boolean tool mesh to create a controlled cave or sinkhole.
-- Use Rock Collection 04 around the opening for a natural entrance and overhang.
-- Test `Trim`, operator-bound expansion, collision, preview build, and compiled build.
-- Keep the feature in a small isolated section until stable.
+## 8. Texture modifiers and adaptive tessellation — COMPLETE
 
-## 8. Texture modifiers and adaptive tessellation — NOT STARTED
+Actor: `Aether_VideoStage08_TexturePatch`
 
-- Reuse Aether height/weight textures for local erosion or displacement patches.
-- Test adaptive tessellation only in a limited region.
-- Avoid applying a high-frequency texture modifier to the complete 48 km terrain.
+- A local 240 m Texture Patch uses `T_MT_Rock_Weight`.
+- Height encoding scale is 18 m with a neutral value of 0.5.
+- Adaptive tessellation is requested where exposed by UE 5.8.
+- The stage was built, inspected, and committed.
 
-## 9. Spline and spline-remesh modifiers — NOT STARTED
+## 9. Regular Spline Modifier — IMPLEMENTATION READY / NEXT INSTALL
 
-- Create one terrain channel or valley path.
-- Add local spline remeshing before deformation.
-- Use weight-channel output for wetland, rock, or ground-cover transitions.
-- Later connect this to water or route systems only after the terrain spline is stable.
+Planned actor: `Aether_VideoStage09_SplineChannel`
 
-## 10. Water-body integration — PREPARED, NOT TERRAIN-INTEGRATED
+Repository support now includes:
+
+- `AUDIT_AETHER_SPLINE_MODIFIER_API.ps1`
+- `Content/Python/AuditAetherSplineModifierAPI_UE58.py`
+- `INSTALL_AETHER_VIDEO_SPLINE_STAGE.ps1`
+- `Content/Python/InstallAetherVideoSplineStage_UE58.py`
+
+The installer creates a roughly 900 m lowered terrain channel inside the Stage 05 Remesh zone:
+
+- Five terrain-following spline control points.
+- Approximately 6 m channel depth.
+- 14 m full-influence half-width.
+- 32 m falloff on each side.
+- Position deformation only; weight-channel output is deferred until water/biome integration.
+- Priority 40 so it builds after the Stage 08 Texture Patch.
+- No compiled whole-world Mesh Partition build is started.
+
+## 10. Spline Remesh Modifier — NOT STARTED
+
+After Stage 09 is visually verified:
+
+- Add a `SplineRemeshModifier` along the channel.
+- Compare remesh and tessellate modes.
+- Reduce topology only where the spline needs smoother banks.
+- Keep the modifier inside the local test region before considering production routes.
+
+## 11. Water-body integration — PREPARED, NOT TERRAIN-INTEGRATED
 
 - Hydrology and ocean support files exist.
 - Mesh Terrain Lake/River modifiers are not yet installed on the production terrain.
+- The Stage 09 channel can become the first controlled riverbed test.
+- Wetland or rock weight-channel writing should be added only after the spline shape is stable.
 - Ocean can remain independent because it does not need to terraform the terrain.
 
-## 11. Conversion back to classic Landscape — DEFERRED
+## 12. Conversion back to classic Landscape — DEFERRED
 
 The tutorial demonstrates conversion workflows, but Aether should remain Mesh Terrain during production because caves, overhangs, local topology, and Boolean features are core goals. Conversion should only be tested on a duplicate map near the end of development.
 
 ## Current checkpoint
 
-**Tutorial foundation complete through terrain creation, partitioning, and material setup. Custom foliage and rocks are complete. The next genuine tutorial-native feature is a small local Remesh/Tessellate modifier zone, followed by Sculpt/Paint and then a Boolean cave feature.**
+**AetherFlight matches the tutorial through the Texture Patch Modifier stage. The next tutorial-native operation is the regular Spline Modifier. Stage 09 code is now prepared; run the Stage 09 launcher, inspect the channel with Build To, then commit the resulting map/external-actor assets before beginning Spline Remesh or water integration.**
