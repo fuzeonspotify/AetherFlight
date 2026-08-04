@@ -4,6 +4,8 @@
 #include "AetherFlightHUD.h"
 #include "CinematicFlightPawn.h"
 #include "EngineUtils.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "ProceduralWorldDirector.h"
 
 AAetherFlightGameMode::AAetherFlightGameMode()
@@ -33,21 +35,27 @@ void AAetherFlightGameMode::StartPlay()
         Director->EnsureWorldGenerated();
     }
 
-    // Keep the ecosystem rollout deliberately small until mesh scale, density,
-    // collision traces and performance are approved. The test actor also moves
-    // the player above the zone after the normal pawn startup has completed.
-    AAetherEnvironmentTestActor* EnvironmentTest = nullptr;
-    for (TActorIterator<AAetherEnvironmentTestActor> It(GetWorld()); It; ++It)
+    // Keep normal editor and gameplay launches on the stable terrain-only path.
+    // The deliberately limited ecosystem approval zone is enabled only by the
+    // dedicated launcher using -AetherEnvironmentTest.
+    if (FParse::Param(FCommandLine::Get(), TEXT("AetherEnvironmentTest")))
     {
-        EnvironmentTest = *It;
-        break;
-    }
-    if (!EnvironmentTest)
-    {
-        EnvironmentTest = GetWorld()->SpawnActor<AAetherEnvironmentTestActor>();
+        AAetherEnvironmentTestActor* EnvironmentTest = nullptr;
+        for (TActorIterator<AAetherEnvironmentTestActor> It(GetWorld()); It; ++It)
+        {
+            EnvironmentTest = *It;
+            break;
+        }
+        if (!EnvironmentTest)
+        {
+            EnvironmentTest = GetWorld()->SpawnActor<AAetherEnvironmentTestActor>();
+        }
+
+        UE_LOG(LogTemp, Display,
+            TEXT("[Aether Environment Test] Opt-in crash-safe approval zone enabled."));
     }
 
     // ACinematicFlightPawn::BeginPlay owns the normal streaming-source startup
-    // and flight release. The environment test actor performs one later,
-    // intentional teleport into the small approval zone.
+    // and flight release. The opt-in test actor performs one later, intentional
+    // teleport into the small approval zone.
 }
