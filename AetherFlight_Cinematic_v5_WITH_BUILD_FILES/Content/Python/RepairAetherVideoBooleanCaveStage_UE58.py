@@ -27,6 +27,18 @@ def load_world():
     return world
 
 
+def make_vector3d(x, y, z):
+    vector3d_class = getattr(unreal, "Vector3d", None)
+    if not vector3d_class:
+        raise RuntimeError("unreal.Vector3d is not exposed by this UE installation")
+
+    value = vector3d_class()
+    value.set_editor_property("x", float(x))
+    value.set_editor_property("y", float(y))
+    value.set_editor_property("z", float(z))
+    return value
+
+
 def set_property(component, name, value, lines, required=False):
     try:
         component.set_editor_property(name, value)
@@ -78,22 +90,26 @@ def main():
     record(lines, f"Actor={actor.get_name()} label={actor_label(actor)}")
     record(lines, f"Component={component.get_class().get_path_name()}")
 
-    # UE's documented Mesh Terrain hole workflow uses Trim. Larger bounds ensure
-    # all triangles touching the stretched cutter are included in the operation.
+    # UE's documented Mesh Terrain hole workflow uses Trim. Larger double-
+    # precision bounds ensure all triangles touching the stretched cutter are
+    # included in the operation. UE 5.8 exposes both properties as Vector3d.
+    operator_bounds = make_vector3d(10000.0, 10000.0, 10000.0)
+    section_bounds = make_vector3d(30000.0, 30000.0, 30000.0)
+
     set_property(component, "boolean_op", unreal.BooleanOperation.TRIM, lines, required=True)
     set_property(component, "simplify_along_new_edges", False, lines, required=True)
     set_property(component, "weld_shared_edges", True, lines, required=True)
     set_property(
         component,
         "expand_operator_bounds",
-        unreal.Vector(10000.0, 10000.0, 10000.0),
+        operator_bounds,
         lines,
         required=True,
     )
     set_property(
         component,
         "expand_section_inclusion_bounds",
-        unreal.Vector(30000.0, 30000.0, 30000.0),
+        section_bounds,
         lines,
         required=True,
     )
@@ -111,6 +127,7 @@ def main():
     record(lines, "BOOLEAN_OPERATION=TRIM")
     record(lines, "EXPAND_OPERATOR_BOUNDS_CM=10000,10000,10000")
     record(lines, "EXPAND_SECTION_INCLUSION_BOUNDS_CM=30000,30000,30000")
+    record(lines, "BOUNDS_STRUCT_TYPE=Vector3d")
     record(lines, "SIMPLIFY_ALONG_NEW_EDGES=FALSE")
     record(lines, "WELD_SHARED_EDGES=TRUE")
     record(lines, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
