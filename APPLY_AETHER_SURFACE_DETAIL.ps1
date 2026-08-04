@@ -17,20 +17,20 @@ if (!(Test-Path -LiteralPath $project)) {
     throw "AetherFlight.uproject was not found: $project"
 }
 if (!(Test-Path -LiteralPath $pythonScript)) {
-    throw "Aether surface-verification script was not found: $pythonScript"
+    throw "Aether surface-repair script was not found: $pythonScript"
 }
 if (Get-Process UnrealEditor -ErrorAction SilentlyContinue) {
-    throw "Close every Unreal Editor window before verifying the terrain surface."
+    throw "Close every Unreal Editor window before repairing the terrain surface."
 }
 
 Write-Host ""
-Write-Host "Aether terrain surface verification is ready."
+Write-Host "Aether Sensei surface repair is ready."
 Write-Host "Project: $project"
 Write-Host "Script:  $pythonScript"
 Write-Host ""
-Write-Host "The verifier checks the 15 existing Aether BaseColor, Normal, and Roughness overrides."
-Write-Host "It also confirms all displacement overrides remain at zero."
-Write-Host "It does not modify or save any Unreal asset."
+Write-Host "The repair duplicates MI_AetherTerrain_Sensei, fixes its 15 stale override names, and verifies all textures."
+Write-Host "The original material instance remains untouched as rollback."
+Write-Host "Terrain geometry, collision, Mesh Partition resolution, displacement, and streaming are not changed."
 
 if ($NoLaunch) {
     Write-Host ""
@@ -58,7 +58,7 @@ $arguments = @(
 )
 
 Write-Host ""
-Write-Host "Launching Unreal Engine 5.8 and verifying the terrain surface..."
+Write-Host "Launching Unreal Engine 5.8 and repairing the Sensei terrain surface..."
 Write-Host "Unreal will close automatically after the Python script finishes."
 Write-Host "Waiting for Unreal to exit..."
 
@@ -67,21 +67,21 @@ Write-Host "Unreal exited with code $($process.ExitCode)."
 
 if (Test-Path -LiteralPath $reportPath) {
     Write-Host ""
-    Write-Host "AETHER SURFACE VERIFICATION FINISHED"
-    Write-Host "------------------------------------"
+    Write-Host "AETHER SENSEI SURFACE REPAIR FINISHED"
+    Write-Host "-------------------------------------"
     Get-Content -LiteralPath $reportPath
     exit 0
 }
 
 Write-Host ""
-Write-Host "AETHER SURFACE VERIFICATION FAILED" -ForegroundColor Red
-Write-Host "------------------------------------"
-Write-Host "The verifier did not create its completion report."
+Write-Host "AETHER SENSEI SURFACE REPAIR FAILED" -ForegroundColor Red
+Write-Host "-------------------------------------"
+Write-Host "The repair did not create its completion report."
 
 if (Test-Path -LiteralPath $logPath) {
     $logLines = Get-Content -LiteralPath $logPath
     $matches = $logLines | Select-String -Pattern (
-        "UpgradeAetherTerrainSurfaceDetail|Aether Surface Verification|" +
+        "UpgradeAetherTerrainSurfaceDetail|Aether Sensei Surface Repair|" +
         "LogPython: Error|Traceback|RuntimeError|TypeError|AttributeError|" +
         "verification failed|Python script executed with errors"
     ) -Context 8,22
@@ -96,4 +96,4 @@ if (Test-Path -LiteralPath $logPath) {
     Write-Host "Unreal log was not found: $logPath"
 }
 
-throw "Aether surface verification failed. The Unreal traceback is printed above."
+throw "Aether Sensei surface repair failed. The Unreal traceback is printed above."
