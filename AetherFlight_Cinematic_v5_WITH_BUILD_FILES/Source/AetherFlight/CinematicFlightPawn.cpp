@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WorldPartitionStreamingSourceComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -13,6 +14,7 @@
 #include "ProceduralMeshComponent.h"
 #include "ProceduralWorldDirector.h"
 #include "UObject/ConstructorHelpers.h"
+#include "WorldPartition/WorldPartitionStreamingSource.h"
 
 ACinematicFlightPawn::ACinematicFlightPawn()
 {
@@ -29,6 +31,31 @@ ACinematicFlightPawn::ACinematicFlightPawn()
     PhysicsBody->SetLinearDamping(0.015f);
     PhysicsBody->SetAngularDamping(0.55f);
     PhysicsBody->SetHiddenInGame(true);
+
+    // A high-speed aircraft can outrun the default player-controller streaming
+    // source. Keep a compact sphere around the aircraft and a longer sector in
+    // front so World Partition starts loading cells before the camera reaches
+    // them without loading the entire 48 km world.
+    FlightStreamingSource = CreateDefaultSubobject<UWorldPartitionStreamingSourceComponent>(
+        TEXT("FlightStreamingSource"));
+    FlightStreamingSource->TargetState = EStreamingSourceTargetState::Activated;
+    FlightStreamingSource->Priority = EStreamingSourcePriority::High;
+
+    FStreamingSourceShape NearShape;
+    NearShape.bUseGridLoadingRange = false;
+    NearShape.bIsSector = false;
+    NearShape.Location = FVector::ZeroVector;
+    NearShape.Radius = 250000.0f;
+    FlightStreamingSource->Shapes.Add(NearShape);
+
+    FStreamingSourceShape AheadShape;
+    AheadShape.bUseGridLoadingRange = false;
+    AheadShape.bIsSector = true;
+    AheadShape.Location = FVector(200000.0f, 0.0f, 0.0f);
+    AheadShape.Rotation = FRotator::ZeroRotator;
+    AheadShape.Radius = 800000.0f;
+    AheadShape.SectorAngle = 75.0f;
+    FlightStreamingSource->Shapes.Add(AheadShape);
 
     AirframeMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ImportedAirframe"));
     AirframeMesh->SetupAttachment(PhysicsBody);
@@ -91,6 +118,16 @@ void ACinematicFlightPawn::BeginPlay()
 {
     Super::BeginPlay();
     PhysicsBody->SetMassOverrideInKg(NAME_None, AircraftMassKg, true);
+
+    // Move to the real flight start before enabling the aircraft streaming
+    // source. This avoids initially loading cells around an unrelated
+    // PlayerStart and then immediately discarding them after a teleport.
+    ResetAircraft();
+    if (FlightStreamingSource)
+    {
+        FlightStreamingSource->EnableStreamingSource();
+    }
+
     LoadImportedAirframe();
     if (!bHasImportedAirframe)
     {
@@ -135,10 +172,17 @@ void ACinematicFlightPawn::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 void ACinematicFlightPawn::ResetAircraft()
 {
-    FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(-650000.0f, -900000.0f, 85000.0f));
+    const float SpawnAltitudeCm = FMath::Max(1000.0f, SpawnAltitudeFeet) * 30.48f;
+    FTransform SpawnTransform(
+        FRotator(-2.0f, 0.0f, 0.0f),
+        FVector(-860000.0f, -900000.0f, SpawnAltitudeCm));
+
     if (AProceduralWorldDirector* Director = AProceduralWorldDirector::Find(GetWorld()))
     {
         SpawnTransform = Director->GetFlightSpawnTransform();
+        FVector SpawnLocation = SpawnTransform.GetLocation();
+        SpawnLocation.Z = SpawnAltitudeCm;
+        SpawnTransform.SetLocation(SpawnLocation);
     }
 
     PhysicsBody->SetPhysicsLinearVelocity(FVector::ZeroVector);
