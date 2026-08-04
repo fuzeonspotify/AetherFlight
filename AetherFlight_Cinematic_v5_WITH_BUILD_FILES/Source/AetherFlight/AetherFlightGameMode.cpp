@@ -3,7 +3,6 @@
 #include "AetherFlightHUD.h"
 #include "CinematicFlightPawn.h"
 #include "EngineUtils.h"
-#include "GameFramework/PlayerController.h"
 #include "ProceduralWorldDirector.h"
 
 AAetherFlightGameMode::AAetherFlightGameMode()
@@ -33,9 +32,9 @@ void AAetherFlightGameMode::StartPlay()
         Director->EnsureWorldGenerated();
     }
 
-    APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
-    if (ACinematicFlightPawn* Aircraft = PlayerController ? Cast<ACinematicFlightPawn>(PlayerController->GetPawn()) : nullptr)
-    {
-        Aircraft->ResetAircraft();
-    }
+    // ACinematicFlightPawn::BeginPlay now owns the complete start sequence:
+    // 20,000-foot positioning, World Partition source activation, initial
+    // streaming hold, and flight release. Resetting it again here caused a
+    // second teleport while cells were loading and made startup streaming do
+    // duplicate work.
 }
