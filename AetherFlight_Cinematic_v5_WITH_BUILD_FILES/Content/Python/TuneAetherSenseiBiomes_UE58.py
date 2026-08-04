@@ -4,6 +4,12 @@ This pass keeps the verified Aether texture overrides and changes only audited,
 global scalar controls on a duplicate material instance. The working
 MI_AetherTerrain_Sensei_Surface asset remains untouched as rollback.
 
+UE 5.8's MaterialEditingLibrary setter rejects several Sensei parameters even
+though the parent reports them as valid Global parameters. This script therefore
+authors normal FScalarParameterValue override structs directly on the duplicate,
+then asks the compiled material instance for every value and aborts unless all
+values round-trip correctly.
+
 No terrain geometry, collision, Mesh Partition resolution, channels,
 displacement, WPO, transformer pipelines, or streaming settings are changed.
 """
@@ -21,6 +27,7 @@ TARGET_PACKAGE = "/Game/Aether/MeshTerrain/MI_AetherTerrain_Sensei_BiomeTuned"
 TARGET_PATH = TARGET_PACKAGE + ".MI_AetherTerrain_Sensei_BiomeTuned"
 REPORT_PATH = Path(unreal.Paths.project_saved_dir()) / "AetherSenseiBiomeTuningReport.txt"
 TEXTURE_PACKAGE = "/Game/Aether/ProductionTerrain/Textures"
+GLOBAL = unreal.MaterialParameterAssociation.GLOBAL_PARAMETER
 
 # Conservative profile based only on controls proven by the read-only audit.
 # It sharpens slope-driven rock/scree separation, broadens the forest/snow
@@ -104,7 +111,7 @@ def verify_textures(instance):
     passed = 0
     for name, expected_path in EXPECTED_TEXTURES.items():
         actual = unreal.MaterialEditingLibrary.get_material_instance_texture_parameter_value(
-            instance, name, unreal.MaterialParameterAssociation.GLOBAL_PARAMETER
+            instance, name, GLOBAL
         )
         actual_path = path_of(actual)
         ok = actual_path == expected_path
@@ -127,28 +134,61 @@ def verify_displacement(instance):
     return checked, unsafe
 
 
-def set_and_verify_scalar(instance, name, value):
-    result = unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
-        instance,
-        name,
-        float(value),
-        unreal.MaterialParameterAssociation.GLOBAL_PARAMETER,
+def make_scalar_override(name, value):
+    info = unreal.MaterialParameterInfo(
+        name=unreal.Name(name),
+        association=GLOBAL,
+        index=-1,
     )
-    if result is False:
-        raise RuntimeError(f"Sensei rejected audited scalar parameter: {name}")
+    return unreal.ScalarParameterValue(
+        parameter_info=info,
+        parameter_value=float(value),
+    )
 
-    actual = float(
-        unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(
-            instance,
-            name,
-            unreal.MaterialParameterAssociation.GLOBAL_PARAMETER,
+
+def apply_scalar_override_structs(instance):
+    """Replace only profile-owned scalar overrides on the duplicate.
+
+    Sensei's parent exposes these names, but MaterialEditingLibrary returns
+    False for some of them. Writing Unreal's normal ScalarParameterValue array
+    is equivalent to checking the override box in the Material Instance editor.
+    """
+    existing = list(instance.get_editor_property("scalar_parameter_values") or [])
+    preserved = [entry for entry in existing if parameter_name(entry) not in TUNING_PROFILE]
+    authored = [make_scalar_override(name, value) for name, value in TUNING_PROFILE.items()]
+    instance.set_editor_property("scalar_parameter_values", preserved + authored)
+
+    try:
+        instance.post_edit_change()
+    except Exception:
+        pass
+    updater = getattr(unreal.MaterialEditingLibrary, "update_material_instance", None)
+    if updater is not None:
+        updater(instance)
+
+    return len(existing), len(preserved), len(authored)
+
+
+def verify_scalar_profile(instance):
+    verified = {}
+    failures = []
+    for name, expected in TUNING_PROFILE.items():
+        actual = float(
+            unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(
+                instance,
+                name,
+                GLOBAL,
+            )
         )
-    )
-    if abs(actual - float(value)) > 0.0001:
+        if abs(actual - float(expected)) > 0.0001:
+            failures.append(f"{name}: expected {expected}, got {actual}")
+        else:
+            verified[name] = actual
+    if failures:
         raise RuntimeError(
-            f"Scalar verification failed for {name}: expected {value}, got {actual}"
+            "Direct scalar override verification failed: " + "; ".join(failures)
         )
-    return actual
+    return verified
 
 
 def save_asset(asset, description):
@@ -203,9 +243,8 @@ def main():
                 f"Source texture verification failed: {texture_passed}/{len(EXPECTED_TEXTURES)}"
             )
 
-        applied = {}
-        for name, value in TUNING_PROFILE.items():
-            applied[name] = set_and_verify_scalar(target, name, value)
+        existing_count, preserved_count, authored_count = apply_scalar_override_structs(target)
+        applied = verify_scalar_profile(target)
 
         displacement_checked, unsafe = verify_displacement(target)
         if unsafe:
@@ -214,14 +253,19 @@ def main():
             )
             raise RuntimeError(f"Unsafe displacement values found: {detail}")
 
-        try:
-            target.post_edit_change()
-        except Exception:
-            pass
-        updater = getattr(unreal.MaterialEditingLibrary, "update_material_instance", None)
-        if updater is not None:
-            updater(target)
         save_asset(target, "tuned Sensei material instance")
+
+        # Reload and verify from the serialized package before assigning it.
+        unreal.EditorAssetLibrary.unload_asset(TARGET_PACKAGE)
+        target = unreal.EditorAssetLibrary.load_asset(TARGET_PATH)
+        if not isinstance(target, unreal.MaterialInstanceConstant):
+            raise RuntimeError(f"Failed to reload tuned material instance: {TARGET_PATH}")
+        applied = verify_scalar_profile(target)
+        texture_passed, texture_lines = verify_textures(target)
+        if texture_passed != len(EXPECTED_TEXTURES):
+            raise RuntimeError(
+                f"Reloaded texture verification failed: {texture_passed}/{len(EXPECTED_TEXTURES)}"
+            )
 
         definition.set_editor_property("material", target)
         save_asset(definition, "Mesh Partition definition")
@@ -240,7 +284,10 @@ def main():
         f"After: {TARGET_PATH}\n"
         f"Rollback preserved: {SOURCE_PATH}\n"
         f"Texture parameters verified: {texture_passed}/{len(EXPECTED_TEXTURES)}\n"
-        f"Scalar controls verified: {len(applied)}/{len(TUNING_PROFILE)}\n"
+        f"Scalar controls verified after reload: {len(applied)}/{len(TUNING_PROFILE)}\n"
+        f"Previous scalar overrides: {existing_count}\n"
+        f"Preserved scalar overrides: {preserved_count}\n"
+        f"Profile overrides authored: {authored_count}\n"
         f"Displacement overrides checked: {displacement_checked}\n"
         "Unsafe displacement values: 0\n\n"
         "Applied balanced profile:\n"
