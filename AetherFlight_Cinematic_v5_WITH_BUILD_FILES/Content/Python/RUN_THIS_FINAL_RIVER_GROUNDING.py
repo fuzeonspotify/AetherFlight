@@ -3,7 +3,7 @@
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-TARGET = SCRIPT_DIR / "RepairAetherVideoRiverEnvironmentPreviewGrounding_UE58_v3.py"
+TARGET = SCRIPT_DIR / "RepairAetherVideoRiverEnvironmentPreviewGrounding_UE58_v4.py"
 
 if not TARGET.is_file():
     raise RuntimeError(f"Final grounding repair is missing: {TARGET}")
