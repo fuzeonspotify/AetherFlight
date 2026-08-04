@@ -4,6 +4,7 @@
 #include "AetherEnvironmentDiversityFloorActor.h"
 #include "AetherEnvironmentTestActor.h"
 #include "AetherFlightHUD.h"
+#include "AetherLegacyRockSuppressorActor.h"
 #include "AetherVerifiedEnvironmentActor.h"
 #include "CinematicFlightPawn.h"
 #include "EngineUtils.h"
@@ -94,8 +95,19 @@ void AAetherFlightGameMode::StartPlay()
             EnhancedEnvironment = GetWorld()->SpawnActor<AAetherEnhancedEnvironmentActor>();
         }
 
+        AAetherLegacyRockSuppressorActor* RockSuppressor = nullptr;
+        for (TActorIterator<AAetherLegacyRockSuppressorActor> It(GetWorld()); It; ++It)
+        {
+            RockSuppressor = *It;
+            break;
+        }
+        if (!RockSuppressor)
+        {
+            RockSuppressor = GetWorld()->SpawnActor<AAetherLegacyRockSuppressorActor>();
+        }
+
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Cinematic Environment] Base biomes, species diversity, dense Nanite plants, and all Rock Collection 04 variants enabled."));
+            TEXT("[Aether Cinematic Environment] Base biomes, dense Nanite plants, and all Fab Rock Collection 04 variants enabled; temporary PCG rocks disabled."));
     }
     else
     {
