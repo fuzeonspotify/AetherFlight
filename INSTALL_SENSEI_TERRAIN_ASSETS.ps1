@@ -14,13 +14,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = $PSScriptRoot
 $projectRoot = Join-Path $repoRoot "AetherFlight_Cinematic_v5_WITH_BUILD_FILES"
 $projectContent = Join-Path $projectRoot "Content"
-$repairScript = Join-Path $projectRoot "Content\Python\DisableAetherSenseiDisplacement_UE58.py"
 
 if (!(Test-Path -LiteralPath $projectRoot)) {
     throw "AetherFlight project folder was not found: $projectRoot"
-}
-if (!(Test-Path -LiteralPath $repairScript)) {
-    throw "Sensei repair script was not found: $repairScript"
 }
 
 if ([string]::IsNullOrWhiteSpace($ZipPath)) {
@@ -139,11 +135,13 @@ Write-Host "Master:       $masterMaterial"
 Write-Host "Dependency:   $senseiDefinition"
 Write-Host ""
 Write-Host "The complete /Game/SenseiTerrain asset namespace was copied so Unreal can resolve internal package references."
-Write-Host "No Sensei project Config files were copied, and MPD_AetherWorld remains the active Aether definition."
+Write-Host "No Sensei project Config files were copied."
+Write-Host "Safety: this installer no longer assigns the Sensei material directly to MPD_AetherWorld."
+Write-Host "The original M_MeshTerrain_Aether remains the active terrain material until an Aether-compatible wrapper is built."
 
 if ($NoLaunch) {
     Write-Host ""
-    Write-Host "Unreal launch skipped. Launch the project with -nosound and run DisableAetherSenseiDisplacement_UE58.py."
+    Write-Host "Unreal launch skipped."
     exit 0
 }
 
@@ -163,10 +161,9 @@ if ($null -eq $project) {
 
 $arguments = @(
     ('"{0}"' -f $project.FullName),
-    "-nosound",
-    ('-ExecutePythonScript="{0}"' -f $repairScript)
+    "-nosound"
 )
 
 Write-Host ""
-Write-Host "Launching Unreal Engine 5.8 with no sound and running the Aether Sensei repair..."
+Write-Host "Launching Unreal Engine 5.8 with no sound. No terrain material changes will be applied automatically."
 Start-Process -FilePath $editor -ArgumentList $arguments
