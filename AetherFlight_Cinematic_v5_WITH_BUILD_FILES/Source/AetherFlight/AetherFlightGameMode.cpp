@@ -1,5 +1,6 @@
 #include "AetherFlightGameMode.h"
 
+#include "AetherEnhancedEnvironmentActor.h"
 #include "AetherEnvironmentDiversityFloorActor.h"
 #include "AetherEnvironmentTestActor.h"
 #include "AetherFlightHUD.h"
@@ -82,8 +83,19 @@ void AAetherFlightGameMode::StartPlay()
             DiversityFloor = GetWorld()->SpawnActor<AAetherEnvironmentDiversityFloorActor>();
         }
 
+        AAetherEnhancedEnvironmentActor* EnhancedEnvironment = nullptr;
+        for (TActorIterator<AAetherEnhancedEnvironmentActor> It(GetWorld()); It; ++It)
+        {
+            EnhancedEnvironment = *It;
+            break;
+        }
+        if (!EnhancedEnvironment)
+        {
+            EnhancedEnvironment = GetWorld()->SpawnActor<AAetherEnhancedEnvironmentActor>();
+        }
+
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Cinematic Environment] Map-wide streaming plus local species diversity floor enabled."));
+            TEXT("[Aether Cinematic Environment] Base biomes, species diversity, dense Nanite plants, and all Rock Collection 04 variants enabled."));
     }
     else
     {
