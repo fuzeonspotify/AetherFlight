@@ -57,10 +57,12 @@ def find_stage09_spline(lines):
     record(lines, f"Stage09 actor matches={len(matches)}")
     if len(matches) != 1:
         return None, None
+
     actor = matches[0]
     spline_class = getattr(unreal, "SplineComponent", None)
     if not spline_class:
         return actor, None
+
     splines = list(actor.get_components_by_class(spline_class))
     record(lines, f"Stage09 spline components={len(splines)}")
     for spline in splines:
@@ -80,9 +82,11 @@ def main():
     modifier_class = getattr(unreal, "SplineRemeshModifier", None)
     record(lines, f"unreal.SplineRemeshModifier={'YES' if modifier_class else 'NO'}")
     if not modifier_class:
-        exposed = sorted(name for name in dir(unreal)
-                         if "spline" in name.lower() and "remesh" in name.lower())
-        record(lines, f"Spline-remesh-related Unreal names={','.join(exposed) if exposed else 'None'}")
+        exposed_names = sorted(
+            name for name in dir(unreal)
+            if "spline" in name.lower() and "remesh" in name.lower()
+        )
+        record(lines, f"Spline-remesh-related Unreal names={','.join(exposed_names) if exposed_names else 'None'}")
         record(lines, "AETHER_SPLINE_REMESH_API=FAIL")
         REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
         REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -156,37 +160,55 @@ def main():
         record(lines, f"unreal.{enum_name}: {', '.join(members) if members else 'no inspectable members'}")
 
     stage_actor, spline = find_stage09_spline(lines)
-    has_affected_setter = bool(
+    component_reference_available = getattr(unreal, "ComponentReference", None) is not None
+
+    has_affected_assignment = bool(
         exposed.get("Affected Mesh Partition")
         or methods.get("bp_set_affected_mega_mesh")
         or methods.get("set_affected_mega_mesh")
     )
-    has_spline_setter = bool(
-        exposed.get("Spline Reference")
-        or methods.get("set_spline_component")
+    has_spline_assignment = bool(
+        methods.get("set_spline_component")
         or methods.get("bp_set_spline_component")
+        or (exposed.get("Spline Reference") and component_reference_available)
     )
     has_radius = bool(exposed.get("Spline Radius"))
-    has_remesh_controls = bool(
-        methods.get("set_target_edge_length")
-        and methods.get("set_use_target_edge_length")
+    has_operation = bool(exposed.get("Current Operation") or methods.get("set_current_operation"))
+    has_target_edge = bool(exposed.get("Target Edge Length") or methods.get("set_target_edge_length"))
+    has_use_target_edge = bool(
+        exposed.get("Use Target Edge Length") or methods.get("set_use_target_edge_length")
     )
+    has_iterations = bool(exposed.get("Remesh Iterations") or methods.get("set_remesh_iterations"))
+    has_vertex_smoothing = bool(
+        exposed.get("Vertex Smoothing") or methods.get("set_vertex_smoothing")
+    )
+
     required = bool(
         stage_actor
         and spline
-        and has_affected_setter
-        and has_spline_setter
+        and has_affected_assignment
+        and has_spline_assignment
         and has_radius
-        and has_remesh_controls
+        and has_operation
+        and has_target_edge
+        and has_use_target_edge
+        and has_iterations
+        and has_vertex_smoothing
     )
 
     record(lines, "")
     record(lines, f"Stage09 dependency available={'YES' if stage_actor else 'NO'}")
     record(lines, f"Stage09 spline available={'YES' if spline else 'NO'}")
-    record(lines, f"Affected setter available={has_affected_setter}")
-    record(lines, f"Spline setter available={has_spline_setter}")
+    record(lines, f"ComponentReference struct available={component_reference_available}")
+    record(lines, f"Affected assignment available={has_affected_assignment}")
+    record(lines, f"Spline assignment available={has_spline_assignment}")
     record(lines, f"Spline radius available={has_radius}")
-    record(lines, f"Target-edge remesh controls available={has_remesh_controls}")
+    record(lines, f"Remesh operation available={has_operation}")
+    record(lines, f"Target edge length available={has_target_edge}")
+    record(lines, f"Use target edge length available={has_use_target_edge}")
+    record(lines, f"Remesh iterations available={has_iterations}")
+    record(lines, f"Vertex smoothing available={has_vertex_smoothing}")
+    record(lines, f"Resample UVs available={bool(exposed.get('Resample UVs') or methods.get('set_resample_uvs'))}")
     record(lines, f"AETHER_SPLINE_REMESH_API={'PASS' if required else 'CHECK'}")
     record(lines, "NO_ACTORS_SPAWNED=TRUE")
     record(lines, "NO_PACKAGES_SAVED=TRUE")
