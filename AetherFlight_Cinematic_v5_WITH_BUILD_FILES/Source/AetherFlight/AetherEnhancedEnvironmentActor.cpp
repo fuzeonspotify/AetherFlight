@@ -137,13 +137,21 @@ bool AAetherEnhancedEnvironmentActor::LoadPlantAssets()
 
     UE_LOG(
         LogTemp,
-        bLoaded ? Display : Error,
+        Display,
         TEXT("[Aether Enhanced Environment] Nanite sample assets: treeA=%s treeB=%s shrub=%s grass=%s ground=%s."),
         NaniteTreeA->GetStaticMesh() ? *NaniteTreeA->GetStaticMesh()->GetPathName() : TEXT("None"),
         NaniteTreeB->GetStaticMesh() ? *NaniteTreeB->GetStaticMesh()->GetPathName() : TEXT("None"),
         AbeliaShrubs->GetStaticMesh() ? *AbeliaShrubs->GetStaticMesh()->GetPathName() : TEXT("None"),
         LoliumGrass->GetStaticMesh() ? *LoliumGrass->GetStaticMesh()->GetPathName() : TEXT("None"),
         OphiopogonGroundCover->GetStaticMesh() ? *OphiopogonGroundCover->GetStaticMesh()->GetPathName() : TEXT("None"));
+
+    if (!bLoaded)
+    {
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[Aether Enhanced Environment] One or more required Nanite sample assets failed to load."));
+    }
 
     return bLoaded;
 }
