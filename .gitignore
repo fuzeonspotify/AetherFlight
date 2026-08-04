@@ -23,6 +23,12 @@ Content/Developers/
 # these into Sound Wave assets, while source recordings remain outside Git.
 AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/AudioSource/Jet/
 
+# Third-party Unreal Sensei source assets are licensed for local project use,
+# not redistribution from this public repository. Install them with
+# INSTALL_SENSEI_TERRAIN_ASSETS.ps1.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/SenseiTerrain/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/SourceAssets/ThirdParty/SenseiTerrain*.zip
+
 # Visual Studio / Rider / VS Code generated state
 .vs/
 .idea/
