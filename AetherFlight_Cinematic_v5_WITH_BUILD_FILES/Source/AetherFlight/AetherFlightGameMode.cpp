@@ -38,8 +38,8 @@ void AAetherFlightGameMode::StartPlay()
 
     const bool bRunLimitedTest =
         FParse::Param(FCommandLine::Get(), TEXT("AetherEnvironmentTest"));
-    const bool bDisableEnvironment =
-        FParse::Param(FCommandLine::Get(), TEXT("AetherNoEnvironment"));
+    const bool bRunMapEnvironment =
+        FParse::Param(FCommandLine::Get(), TEXT("AetherMapEnvironment"));
 
     if (bRunLimitedTest)
     {
@@ -55,9 +55,9 @@ void AAetherFlightGameMode::StartPlay()
         }
 
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Environment Test] Opt-in crash-safe approval zone enabled."));
+            TEXT("[Aether Environment Test] Opt-in limited approval zone enabled."));
     }
-    else if (!bDisableEnvironment)
+    else if (bRunMapEnvironment)
     {
         AAetherMapWideEnvironmentActor* MapEnvironment = nullptr;
         for (TActorIterator<AAetherMapWideEnvironmentActor> It(GetWorld()); It; ++It)
@@ -71,12 +71,15 @@ void AAetherFlightGameMode::StartPlay()
         }
 
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Map Environment] Map-wide deterministic chunk streaming enabled."));
+            TEXT("[Aether Map Environment] Opt-in persistent map-wide streaming enabled."));
     }
     else
     {
+        // After two Renderer crashes, ordinary editor and Play launches remain
+        // terrain-only. The dedicated launcher supplies -AetherMapEnvironment
+        // for the repaired persistent-HISM implementation.
         UE_LOG(LogTemp, Display,
-            TEXT("[Aether Map Environment] Disabled by -AetherNoEnvironment."));
+            TEXT("[Aether Map Environment] Stable terrain-only launch. Use the dedicated map-wide launcher to enable foliage."));
     }
 
     // ACinematicFlightPawn::BeginPlay owns the normal streaming-source startup
