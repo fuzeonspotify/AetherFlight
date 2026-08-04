@@ -20,7 +20,16 @@ import unreal
 
 
 LOG_PREFIX = "[Aether Sensei Displacement Fix]"
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_PATH = Path(
+    globals().get(
+        "__file__",
+        unreal.Paths.convert_relative_path_to_full(
+            unreal.Paths.project_content_dir()
+            + "Python/DisableAetherSenseiDisplacement_UE58.py"
+        ),
+    )
+).resolve()
+SCRIPT_DIR = SCRIPT_PATH.parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
