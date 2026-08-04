@@ -8,9 +8,9 @@ $repoRoot = $PSScriptRoot
 $projectRoot = Join-Path $repoRoot "AetherFlight_Cinematic_v5_WITH_BUILD_FILES"
 $project = Join-Path $projectRoot "AetherFlight.uproject"
 $editor = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe"
-$auditScript = Join-Path $projectRoot "Content\Python\AuditAetherRiverEnvironmentAPI_UE58.py"
+$auditScript = Join-Path $projectRoot "Content\Python\AuditAetherRiverEnvironmentAPI_UE58_v2.py"
 $auditReport = Join-Path $projectRoot "Saved\AetherRiverEnvironmentAPIAudit.txt"
-$installScript = Join-Path $projectRoot "Content\Python\InstallAetherVideoRiverEnvironmentStage_UE58.py"
+$installScript = Join-Path $projectRoot "Content\Python\InstallAetherVideoRiverEnvironmentStage_UE58_v2.py"
 $installReport = Join-Path $projectRoot "Saved\AetherVideoRiverEnvironmentInstall.txt"
 
 if (Get-Process UnrealEditor -ErrorAction SilentlyContinue) {
