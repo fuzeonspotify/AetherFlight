@@ -51,7 +51,10 @@ def main():
         return
 
     component = unreal.get_default_object(boolean_class)
-    record(lines, f"Class={boolean_class.get_path_name()}")
+    # Unreal Python exposes BooleanModifier as a generated Python type. Calling
+    # UObject.get_path_name() directly on that type is an unbound-method error;
+    # inspect the actual UClass through the default object instead.
+    record(lines, f"Class={component.get_class().get_path_name()}")
     record(lines, f"Default object={component.get_path_name()}")
 
     property_checks = [
