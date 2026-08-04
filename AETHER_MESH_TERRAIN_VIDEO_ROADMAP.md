@@ -28,6 +28,7 @@ This roadmap follows the tutorial as a complete workflow and separates tutorial-
 - Biome texture parameters tuned.
 - Unsafe displacement paths disabled where necessary for renderer stability.
 - Weight-channel textures exist for grass, forest floor, rock, sand, scree, snow, and wetland.
+- `MPD_AetherWorld` defines `Grass`, `ForestFloor`, `Rock`, `Scree`, `Snow`, `Sand`, `Wetland`, `Water`, `Forest`, and `FoliageExclusion` channels.
 
 ## 4. Foliage and environmental assets — COMPLETE CUSTOM EXTENSION
 
@@ -85,7 +86,7 @@ Actor: `Aether_VideoStage09_SplineChannel`
 - The points use a controlled shallow downhill profile.
 - Approximate channel depth is 6 m.
 - Full-influence half-width is 14 m with 32 m falloff.
-- Position deformation only; weight-channel output is deferred until riverbank material integration.
+- Position deformation only; weight-channel output was deferred to Stage 12.
 - Priority 40 builds it after the Stage 08 Texture Patch.
 - The spline, bounds, and actor transform now move together.
 
@@ -102,50 +103,78 @@ Actor: `Aether_VideoStage10_SplineRemesh`
 - The enabled/disabled Wireframe comparison was visually verified.
 - No whole-world compiled Mesh Partition build was started.
 
-## 11. Local river water integration — IMPLEMENTATION READY / NEXT INSTALL
+## 11. Local river water integration — COMPLETE
 
-Planned actors:
+Actors:
 
 - `Aether_VideoStage11_River`
 - `Aether_VideoStage11_WaterZone`
 
+Completed configuration:
+
+- Native `WaterBodyRiver` follows a separate copy of the repaired five-point Stage 09 path.
+- Visible water mesh was confirmed after one editor-side spline refresh.
+- Water surface sits approximately 3 m above the Stage 09 channel centerline.
+- Requested width is approximately 20 m total through spline-point scaling.
+- UE 5.8 preserved its 1.5 m engine-default depth metadata because the default struct is `EditDefaultsOnly`.
+- Local Water Zone extent is 1.6 km.
+- Native `RiverModifier` is assigned to the authoritative Mesh Partition at priority 50.
+- Map and external actors were committed in `b3a46e7bd24cd7fd947faf23ac890faa141fc9ff`.
+- No whole-world compiled Mesh Partition build was started.
+
+## 12. Riverbank wetland weight integration — IMPLEMENTATION READY / NEXT INSTALL
+
+Planned actor:
+
+- `Aether_VideoStage12_RiverbankWetland`
+
 Repository support includes:
 
-- `AUDIT_AETHER_MESH_TERRAIN_RIVER_API.ps1`
-- `Content/Python/AuditAetherMeshTerrainRiverAPI_UE58.py`
-- `INSTALL_AETHER_VIDEO_RIVER_STAGE.ps1`
-- `Content/Python/InstallAetherVideoRiverStage_UE58.py`
+- `AUDIT_AETHER_RIVERBANK_WEIGHT_API.ps1`
+- `Content/Python/AuditAetherRiverbankWeightAPI_UE58.py`
+- `INSTALL_AETHER_VIDEO_RIVERBANK_STAGE.ps1`
+- `Content/Python/InstallAetherVideoRiverbankStage_UE58.py`
 
-The installer is audit-first and will:
+The audit-first installer will:
 
-- Create a native `WaterBodyRiver`.
-- Copy the repaired five-point Stage 09 path into a separate `WaterSplineComponent`.
-- Place the water surface approximately 3 m above the Stage 09 channel.
-- Request a 20 m total river width, 3 m depth, and a gentle water velocity.
-- Create a local 1.6 km `WaterZone` for water-mesh generation.
-- Add the concrete Mesh Terrain river modifier exposed by UE 5.8.
-- Assign it to the authoritative Mesh Partition at priority 50.
+- Verify all saved Stage 09–11 dependencies.
+- Verify `MPD_AetherWorld` contains the channel named `Wetland`.
+- Verify UE 5.8 exposes `SplineModifierWeightEntry` and the required channel/blend fields.
+- Clone the repaired five-point Stage 09 spline into a separate Stage 12 actor.
+- Set `write_mode = 2`, which is **Weights only**; terrain positions cannot be changed by Stage 12.
+- Write one `Wetland` channel entry using Alpha Blend and a target weight of 1.0 where exposed.
+- Use a 14 m full-influence half-width and 32 m outer falloff.
+- Assign the modifier to the authoritative Mesh Partition at priority 55.
 - Save `AetherWorld` without starting the compiled whole-world build.
 
-## 12. Riverbank material and biome integration — NOT STARTED
+## 13. River environment integration — NOT STARTED
 
-After Stage 11 is visually verified:
+After Stage 12 is visually verified:
 
-- Write wetland, sand, gravel, or rock weight channels along the banks.
-- Exclude dry ground cover from the water corridor.
-- Add wet vegetation and riverbank rocks with a controlled local PCG pass.
-- Keep the work local until water tiles, collision, and streaming are validated.
+- Exclude grass and dry ground cover near the water corridor.
+- Add wet vegetation outside the water surface.
+- Add controlled riverbank rocks.
+- Prevent foliage from spawning inside the river.
+- Keep the pass local until collision and World Partition streaming are validated.
 
-## 13. Expanded hydrology — DEFERRED
+## 14. Water polish and runtime validation — NOT STARTED
+
+- Tune flow speed and river appearance.
+- Add foam around rocks or sharper banks where useful.
+- Validate collision and interaction.
+- Confirm the Water Zone and river remain visible during World Partition streaming.
+- Run a local compiled-section validation only after the editor preview is stable.
+
+## 15. Expanded hydrology — DEFERRED
 
 - Extend the verified local river into a lake, waterfall, or ocean connection.
 - Ocean can remain independent because it does not need to terraform the terrain.
-- Validate river-to-lake or river-to-ocean transition materials before expanding the system.
+- Validate river-to-lake or river-to-ocean transition materials before expansion.
 
-## 14. Conversion back to classic Landscape — DEFERRED
+## 16. Conversion back to classic Landscape — DEFERRED
 
 The tutorial demonstrates conversion workflows, but Aether should remain Mesh Terrain during production because caves, overhangs, local topology, and Boolean features are core goals. Conversion should only be tested on a duplicate map near the end of development.
 
 ## Current checkpoint
 
-**AetherFlight matches the tutorial through the repaired and visually verified Spline Remesh stage. Stage 11 local river support is prepared. Run the Stage 11 launcher, inspect the WaterBodyRiver and WaterZone, Build To through its river modifier, then commit the resulting map/external-actor assets before beginning riverbank weight-channel and environment integration.**
+**AetherFlight matches the tutorial through a visually verified local WaterBodyRiver. Stage 12 riverbank wetland support is prepared. Run `INSTALL_AETHER_VIDEO_RIVERBANK_STAGE.ps1`, inspect `Aether_VideoStage12_RiverbankWetland`, Build To through priority 55, and compare it disabled/enabled before committing the resulting map and external actor.**
