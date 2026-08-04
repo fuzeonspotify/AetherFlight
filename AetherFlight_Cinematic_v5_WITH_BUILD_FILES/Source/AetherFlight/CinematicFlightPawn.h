@@ -89,7 +89,16 @@ protected:
     UCameraComponent* CinematicCamera;
 
     UPROPERTY(EditAnywhere, Category = "Flight|Spawn", meta = (ClampMin = "1000.0", ClampMax = "50000.0"))
-    float SpawnAltitudeFeet = 20000.0f;
+    float SpawnAltitudeFeet = 9000.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Spawn")
+    bool bUseEnvironmentShowcaseSpawn = true;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Spawn")
+    FVector2D EnvironmentShowcaseCenter = FVector2D(-400000.0f, 400000.0f);
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Spawn", meta = (ClampMin = "50000.0", ClampMax = "500000.0"))
+    float EnvironmentShowcaseApproachDistanceCm = 180000.0f;
 
     UPROPERTY(EditAnywhere, Category = "Flight|Airframe", meta = (ClampMin = "1000.0"))
     float AircraftMassKg = 8500.0f;
