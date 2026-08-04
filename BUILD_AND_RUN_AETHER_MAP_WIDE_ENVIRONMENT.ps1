@@ -26,15 +26,13 @@ if (!(Test-Path -LiteralPath $editor)) {
 
 Write-Host ""
 Write-Host "Building the Aether cinematic map-wide environment..."
-Write-Host "Trees: DZ Pine, Aspen, Cork Oak, and Coconut/Palm"
-Write-Host "Shrubs: GV Free Shrubs Pack A and B"
-Write-Host "Ground plant: Nanite Plants Sample Abelia"
-Write-Host "Rock: PCG Boulder until a cinematic rock pack is installed"
-Write-Host "Coverage: entire 48 km AetherWorld through a reusable local ring"
-Write-Host "Renderer design: eight persistent HISM components; no runtime component creation or destruction"
-Write-Host "Runtime: one 1.6 km terrain chunk generated per second"
-Write-Host "Density per chunk: up to 72 trees, 28 shrubs, 20 plants, and 10 rocks"
-Write-Host "Renderer safety: no foliage collision, dynamic shadows, distance fields, or density scaling"
+Write-Host "Base trees: DZ Pine, Aspen, Cork Oak, and Coconut/Palm"
+Write-Host "Regular Nanite trees: both Acer variants from the free Nanite sample collection"
+Write-Host "Dense ground layer: Nanite Abelia, Lolium grass, and Ophiopogon ground cover"
+Write-Host "Additional shrubs: GV Free Shrubs Pack A and B"
+Write-Host "Rocks: all 7 Environment - Rock Collection 04 meshes with small, medium, and large scaling"
+Write-Host "Coverage: streamed local rings that follow the aircraft across the entire 48 km AetherWorld"
+Write-Host "Renderer safety: persistent HISM components, no foliage collision, dynamic shadows, or distance fields"
 Write-Host ""
 
 & $buildBat `
@@ -49,8 +47,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "AETHER CINEMATIC ENVIRONMENT BUILD FAILED" -ForegroundColor Red
     if (Test-Path -LiteralPath $logPath) {
-        Get-Content -LiteralPath $logPath -Tail 460 |
-            Select-String -Pattern "error C|fatal error|AetherVerifiedEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,18
+        Get-Content -LiteralPath $logPath -Tail 520 |
+            Select-String -Pattern "error C|fatal error|AetherEnhancedEnvironmentActor|AetherEnvironmentDiversityFloorActor|AetherVerifiedEnvironmentActor|AetherFlightGameMode|CinematicFlightPawn" -Context 5,20
     }
     throw "Aether cinematic environment build failed with exit code $LASTEXITCODE."
 }
@@ -58,7 +56,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "AETHER CINEMATIC ENVIRONMENT BUILD SUCCEEDED" -ForegroundColor Green
 Write-Host "Launching AetherWorld with -AetherMapEnvironment..."
-Write-Host "Press Play and wait for: AETHER CINEMATIC ENVIRONMENT"
+Write-Host "Press Play and wait for both CINEMATIC MAP-WIDE STREAMING READY and DENSE NANITE PLANTS AND MULTI-ROCK STREAMING READY."
 Write-Host "A normal editor launch remains terrain-only."
 Write-Host ""
 
