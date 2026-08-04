@@ -11,6 +11,7 @@ class UProceduralMeshComponent;
 class USceneComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UWorldPartitionStreamingSourceComponent;
 
 UENUM(BlueprintType)
 enum class EFlightCameraMode : uint8
@@ -57,6 +58,9 @@ protected:
     UPROPERTY(VisibleAnywhere, Category = "Aircraft")
     UProceduralMeshComponent* FallbackAirframe;
 
+    UPROPERTY(VisibleAnywhere, Category = "World Partition")
+    UWorldPartitionStreamingSourceComponent* FlightStreamingSource;
+
     UPROPERTY(VisibleAnywhere, Category = "Camera")
     USceneComponent* CockpitAnchor;
 
@@ -77,6 +81,9 @@ protected:
 
     UPROPERTY(VisibleAnywhere, Category = "Camera")
     UCameraComponent* CinematicCamera;
+
+    UPROPERTY(EditAnywhere, Category = "Flight|Spawn", meta = (ClampMin = "1000.0", ClampMax = "50000.0"))
+    float SpawnAltitudeFeet = 20000.0f;
 
     UPROPERTY(EditAnywhere, Category = "Flight|Airframe", meta = (ClampMin = "1000.0"))
     float AircraftMassKg = 8500.0f;
