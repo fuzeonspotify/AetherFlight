@@ -147,13 +147,23 @@ def add_component_to_actor(actor, component_class, lines):
     params.set_editor_property("parent_handle", handles[0])
     params.set_editor_property("new_class", component_class)
     new_handle, fail_reason = subsystem.add_new_subobject(params)
-    if not new_handle or not new_handle.is_valid():
+
+    # UE 5.8's Python wrapper does not expose SubobjectDataHandle.is_valid()
+    # as an instance method. Validate it through the Blueprint function library.
+    if not unreal.SubobjectDataBlueprintFunctionLibrary.is_handle_valid(new_handle):
         raise RuntimeError(f"Could not add {component_class}: {fail_reason}")
 
     data = subsystem.k2_find_subobject_data_from_handle(new_handle)
-    component = unreal.SubobjectDataBlueprintFunctionLibrary.get_object(data)
+    if not data:
+        raise RuntimeError(
+            f"Added {component_class}, but the SubobjectData could not be resolved: {fail_reason}"
+        )
+
+    component = unreal.SubobjectDataBlueprintFunctionLibrary.get_associated_object(data)
     if not component:
-        raise RuntimeError(f"Added {component_class}, but could not resolve the new component object")
+        raise RuntimeError(
+            f"Added {component_class}, but the associated component object could not be resolved"
+        )
 
     record(lines, f"Added component={component.get_class().get_path_name()}")
     return component
@@ -284,7 +294,7 @@ def save_map(lines):
 
 def main():
     lines = []
-    record(lines, "AETHER VIDEO STAGE 05 — LOCAL REMESH INSTALL")
+    record(lines, "AETHER VIDEO STAGE 05 - LOCAL REMESH INSTALL")
     record(lines, "=" * 96)
 
     world = load_world()
