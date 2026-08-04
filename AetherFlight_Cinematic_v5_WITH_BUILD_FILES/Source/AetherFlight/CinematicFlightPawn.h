@@ -61,6 +61,12 @@ protected:
     UPROPERTY(VisibleAnywhere, Category = "World Partition")
     UWorldPartitionStreamingSourceComponent* FlightStreamingSource;
 
+    UPROPERTY(EditAnywhere, Category = "World Partition", meta = (ClampMin = "0.0", ClampMax = "10.0"))
+    float InitialStreamingMinimumWaitSeconds = 1.5f;
+
+    UPROPERTY(EditAnywhere, Category = "World Partition", meta = (ClampMin = "1.0", ClampMax = "30.0"))
+    float InitialStreamingMaximumWaitSeconds = 8.0f;
+
     UPROPERTY(VisibleAnywhere, Category = "Camera")
     USceneComponent* CockpitAnchor;
 
@@ -120,6 +126,7 @@ private:
     void ApplyAerodynamics(float DeltaSeconds);
     void UpdateCamera(float DeltaSeconds);
     void ActivateCamera(EFlightCameraMode NewMode);
+    void ReleaseAircraftAfterStreaming();
 
     void InputThrottle(float Value);
     void InputPitch(float Value);
@@ -145,6 +152,8 @@ private:
     FVector PreviousVelocity = FVector::ZeroVector;
     bool bFreeLook = false;
     bool bHasImportedAirframe = false;
+    bool bWaitingForInitialStreaming = false;
+    float InitialStreamingWaitElapsed = 0.0f;
     float CinematicTime = 0.0f;
     EFlightCameraMode CameraMode = EFlightCameraMode::Chase;
 };
