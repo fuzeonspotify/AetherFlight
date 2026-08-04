@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import unreal
 
 MAP_PATH = "/Game/Maps/AetherWorld"
@@ -16,6 +17,10 @@ RELATIVE_POINTS_CM = (
     (23000.0, 7000.0),
     (45000.0, -18000.0),
 )
+EXPECTED_POINT_COUNT = len(RELATIVE_POINTS_CM)
+MIN_EXPECTED_LENGTH_CM = 80000.0
+MAX_EXPECTED_LENGTH_CM = 170000.0
+REPORT_LINES = []
 
 
 def record(lines, text=""):
@@ -58,6 +63,52 @@ def find_single_component(actor, component_class, description):
             f"Expected exactly one {description} on {actor_label(actor)}, found {len(components)}"
         )
     return components[0]
+
+
+def safe_relative_scale(component):
+    try:
+        return component.get_editor_property("relative_scale3d")
+    except Exception:
+        try:
+            return component.get_relative_scale3d()
+        except Exception:
+            return None
+
+
+def normalize_transforms(actor, spline, lines):
+    old_actor_scale = actor.get_actor_scale3d()
+    old_spline_scale = safe_relative_scale(spline)
+    record(lines, f"Stage09 actor scale before={old_actor_scale}")
+    record(lines, f"Stage09 spline relative scale before={old_spline_scale}")
+
+    unit_scale = unreal.Vector(1.0, 1.0, 1.0)
+    actor.set_actor_scale3d(unit_scale)
+
+    set_relative = getattr(spline, "set_relative_scale3d", None)
+    if callable(set_relative):
+        set_relative(unit_scale)
+    else:
+        spline.set_editor_property("relative_scale3d", unit_scale)
+
+    new_actor_scale = actor.get_actor_scale3d()
+    new_spline_scale = safe_relative_scale(spline)
+    record(lines, f"Stage09 actor scale after={new_actor_scale}")
+    record(lines, f"Stage09 spline relative scale after={new_spline_scale}")
+
+    for label, scale in (
+        ("actor", new_actor_scale),
+        ("spline", new_spline_scale),
+    ):
+        if scale is None:
+            continue
+        if not (
+            math.isclose(float(scale.x), 1.0, abs_tol=0.001)
+            and math.isclose(float(scale.y), 1.0, abs_tol=0.001)
+            and math.isclose(float(scale.z), 1.0, abs_tol=0.001)
+        ):
+            raise RuntimeError(f"Could not normalize Stage09 {label} scale: {scale}")
+
+    return old_actor_scale, old_spline_scale
 
 
 def terrain_hit(world, x, y, lines):
@@ -124,35 +175,70 @@ def existing_world_points(spline, lines):
     count = int(spline.get_number_of_spline_points())
     world_space = unreal.SplineCoordinateSpace.WORLD
     points = []
+    record(lines, f"Spline point count before repair={count}")
     for index in range(count):
         try:
-            points.append(spline.get_location_at_spline_point(index, world_space))
+            point = spline.get_location_at_spline_point(index, world_space)
+            points.append(point)
+            record(lines, f"Existing world point {index}={point}")
         except Exception as exc:
             record(lines, f"Could not read existing spline point {index}: {exc}")
             points.append(None)
     return points
 
 
+def validate_local_points(spline, lines):
+    count = int(spline.get_number_of_spline_points())
+    record(lines, f"Spline point count after repair={count}")
+    if count != EXPECTED_POINT_COUNT:
+        raise RuntimeError(
+            f"Expected {EXPECTED_POINT_COUNT} repaired points, but spline contains {count}"
+        )
+
+    local_space = unreal.SplineCoordinateSpace.LOCAL
+    for index, (expected_x, expected_y) in enumerate(RELATIVE_POINTS_CM):
+        point = spline.get_location_at_spline_point(index, local_space)
+        record(lines, f"Verified local point {index}={point}")
+        if not (
+            math.isclose(float(point.x), expected_x, abs_tol=2.0)
+            and math.isclose(float(point.y), expected_y, abs_tol=2.0)
+        ):
+            raise RuntimeError(
+                f"Local point {index} was not rebuilt correctly: {point}; "
+                f"expected X={expected_x}, Y={expected_y}"
+            )
+
+
 def rebuild_stage09_spline(world, actor, spline, lines):
     actor_location = actor.get_actor_location()
-    actor_rotation = actor.get_actor_rotation()
-    actor_scale = actor.get_actor_scale3d()
     record(lines, f"Stage09 actor location={actor_location}")
-    record(lines, f"Stage09 actor rotation={actor_rotation}")
-    record(lines, f"Stage09 actor scale={actor_scale}")
+    record(lines, f"Stage09 actor rotation={actor.get_actor_rotation()}")
 
     old_length = spline_length(spline)
     old_points = existing_world_points(spline, lines)
     record(lines, f"Spline length before repair cm={old_length}")
+
+    old_actor_scale, old_spline_scale = normalize_transforms(actor, spline, lines)
+
+    try:
+        spline.set_editor_property("closed_loop", False)
+    except Exception:
+        set_closed_loop = getattr(spline, "set_closed_loop", None)
+        if callable(set_closed_loop):
+            set_closed_loop(False, True)
+
+    spline.clear_spline_points(True)
+    cleared_count = int(spline.get_number_of_spline_points())
+    record(lines, f"Spline point count immediately after clear={cleared_count}")
+    if cleared_count != 0:
+        raise RuntimeError(f"Spline clear failed; {cleared_count} points remain")
 
     local_space = unreal.SplineCoordinateSpace.LOCAL
     curve_type = getattr(unreal.SplinePointType, "CURVE", None)
     if curve_type is None:
         curve_type = getattr(unreal.SplinePointType, "CURVE_CLAMPED", None)
 
-    spline.clear_spline_points(False)
     trace_passes = 0
-
     for index, (offset_x, offset_y) in enumerate(RELATIVE_POINTS_CM):
         world_x = actor_location.x + offset_x
         world_y = actor_location.y + offset_y
@@ -169,18 +255,14 @@ def rebuild_stage09_spline(world, actor, spline, lines):
             world_z = actor_location.z - CHANNEL_DEPTH_CM
             placement = "ACTOR_Z_FALLBACK"
 
-        local_point = unreal.Vector(
-            offset_x,
-            offset_y,
-            world_z - actor_location.z,
-        )
+        local_point = unreal.Vector(offset_x, offset_y, world_z - actor_location.z)
         spline.add_spline_point(local_point, local_space, False)
-        record(lines, f"Local spline point {index}={local_point} | {placement}")
+        record(lines, f"Added local spline point {index}={local_point} | {placement}")
 
-    for index in range(len(RELATIVE_POINTS_CM)):
+    for index in range(EXPECTED_POINT_COUNT):
         if curve_type is not None:
             spline.set_spline_point_type(index, curve_type, False)
-        width_scale = 1.0 if index in (0, len(RELATIVE_POINTS_CM) - 1) else 1.25
+        width_scale = 1.0 if index in (0, EXPECTED_POINT_COUNT - 1) else 1.25
         spline.set_scale_at_spline_point(
             index,
             unreal.Vector(1.0, width_scale, 1.0),
@@ -188,29 +270,58 @@ def rebuild_stage09_spline(world, actor, spline, lines):
         )
 
     spline.update_spline()
-    try:
-        spline.set_editor_property("closed_loop", False)
-    except Exception:
-        pass
+    validate_local_points(spline, lines)
+
     try:
         spline.set_editor_property("draw_debug", True)
     except Exception:
         pass
     try:
         spline.modify()
+        actor.modify()
     except Exception:
         pass
 
     new_length = spline_length(spline)
     record(lines, f"Spline length after repair cm={new_length}")
-    record(lines, f"Terrain trace passes={trace_passes}/{len(RELATIVE_POINTS_CM)}")
+    record(lines, f"Terrain trace passes={trace_passes}/{EXPECTED_POINT_COUNT}")
 
-    if new_length is None or not (80000.0 <= new_length <= 150000.0):
+    if new_length is None or not (
+        MIN_EXPECTED_LENGTH_CM <= new_length <= MAX_EXPECTED_LENGTH_CM
+    ):
         raise RuntimeError(
             f"Repaired spline length is outside the expected local range: {new_length} cm"
         )
 
-    return old_length, new_length, trace_passes
+    return (
+        old_length,
+        new_length,
+        trace_passes,
+        old_actor_scale,
+        old_spline_scale,
+    )
+
+
+def refresh_stage09_modifier(stage09_actor, lines):
+    modifier_class = getattr(unreal, "SplineModifier", None)
+    if not modifier_class:
+        record(lines, "Stage09 SplineModifier class unavailable for cache refresh")
+        return False
+    modifiers = list(stage09_actor.get_components_by_class(modifier_class))
+    if len(modifiers) != 1:
+        record(lines, f"Stage09 SplineModifier count={len(modifiers)}; cache refresh skipped")
+        return False
+    update_method = getattr(modifiers[0], "update_spline_data", None)
+    if not callable(update_method):
+        record(lines, "Stage09 UpdateSplineData is not Python-callable; editor reload will refresh it")
+        return False
+    try:
+        update_method()
+        record(lines, "Stage09 spline modifier cache refreshed")
+        return True
+    except Exception as exc:
+        record(lines, f"Stage09 spline modifier cache refresh warning={exc}")
+        return False
 
 
 def repair_stage10_reference(stage09_actor, stage09_spline, stage10_actor, lines):
@@ -254,11 +365,17 @@ def save_map(lines):
     return saved
 
 
+def write_report(lines):
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main():
-    lines = []
-    record(lines, "AETHER STAGE 09 LOCAL-SPACE SPLINE REPAIR")
+    lines = REPORT_LINES
+    record(lines, "AETHER STAGE 09 LOCAL-SPACE SPLINE REPAIR V2")
     record(lines, "=" * 96)
-    record(lines, "Repairs Stage09 without starting a compiled Mesh Partition build.")
+    record(lines, "Normalizes transform scale and rebuilds exactly five local-space points.")
+    record(lines, "No compiled Mesh Partition build is started.")
 
     world = load_world()
     _, actors = get_actors()
@@ -270,12 +387,15 @@ def main():
         raise RuntimeError("unreal.SplineComponent is unavailable")
     stage09_spline = find_single_component(stage09_actor, spline_class, "SplineComponent")
 
-    old_length, new_length, trace_passes = rebuild_stage09_spline(
-        world,
-        stage09_actor,
-        stage09_spline,
-        lines,
-    )
+    (
+        old_length,
+        new_length,
+        trace_passes,
+        old_actor_scale,
+        old_spline_scale,
+    ) = rebuild_stage09_spline(world, stage09_actor, stage09_spline, lines)
+
+    stage09_cache_refreshed = refresh_stage09_modifier(stage09_actor, lines)
     repair_stage10_reference(stage09_actor, stage09_spline, stage10_actor, lines)
 
     saved = save_map(lines)
@@ -284,22 +404,29 @@ def main():
     record(lines, "REPAIR_RESULT=PASS")
     record(lines, f"SPLINE_LENGTH_BEFORE_CM={old_length}")
     record(lines, f"SPLINE_LENGTH_AFTER_CM={new_length}")
-    record(lines, f"TERRAIN_TRACE_PASSES={trace_passes}/{len(RELATIVE_POINTS_CM)}")
+    record(lines, f"TERRAIN_TRACE_PASSES={trace_passes}/{EXPECTED_POINT_COUNT}")
+    record(lines, f"ACTOR_SCALE_BEFORE={old_actor_scale}")
+    record(lines, f"SPLINE_RELATIVE_SCALE_BEFORE={old_spline_scale}")
+    record(lines, "ACTOR_SCALE_AFTER=1,1,1")
+    record(lines, "SPLINE_RELATIVE_SCALE_AFTER=1,1,1")
+    record(lines, "SPLINE_POINT_COUNT=5")
     record(lines, "SPLINE_COORDINATE_SPACE=LOCAL")
+    record(lines, f"STAGE09_CACHE_REFRESHED={str(stage09_cache_refreshed).upper()}")
     record(lines, "STAGE10_REFERENCE_REFRESHED=TRUE")
-    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, move the Stage09 actor slightly to confirm the spline and bounds move together, then include Stage10 and Stage09 in Build To.")
+    record(lines, "NEXT_EDITOR_ACTION=Open AetherWorld, confirm the Stage09 line, points, and bounds move together, then include Stage10 and Stage09 in Build To.")
     record(lines, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
 
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_report(lines)
     unreal.log_warning(f"AETHER_STAGE09_LOCAL_SPLINE_REPAIR_REPORT={REPORT_PATH}")
 
 
 try:
     main()
 except Exception as exc:
-    message = f"REPAIR_RESULT=FAIL\nERROR={type(exc).__name__}: {exc}\n"
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(message, encoding="utf-8")
-    unreal.log_error(message)
+    record(REPORT_LINES, "")
+    record(REPORT_LINES, "REPAIR_RESULT=FAIL")
+    record(REPORT_LINES, f"ERROR={type(exc).__name__}: {exc}")
+    record(REPORT_LINES, "NO_COMPILED_MESH_PARTITION_BUILD_WAS_STARTED=TRUE")
+    write_report(REPORT_LINES)
+    unreal.log_error(f"Stage09 repair failed: {type(exc).__name__}: {exc}")
     raise
