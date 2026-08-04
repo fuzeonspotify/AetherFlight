@@ -14,13 +14,17 @@ EXPECTED_ASSETS = {
     "Scree weight": "/Game/Aether/MeshTerrain/Weightmaps/T_MT_Scree_Weight",
     "Snow weight": "/Game/Aether/MeshTerrain/Weightmaps/T_MT_Snow_Weight",
     "Wetland weight": "/Game/Aether/MeshTerrain/Weightmaps/T_MT_Wetland_Weight",
-    "Rock Collection 04 #1": "/Game/Rock_Collection_04/Meshes/Rock_01/StaticMeshes/SM_Rock_01",
-    "Rock Collection 04 #2": "/Game/Rock_Collection_04/Meshes/Rock_02/StaticMeshes/SM_Rock_02",
-    "Rock Collection 04 #3": "/Game/Rock_Collection_04/Meshes/Rock_03/StaticMeshes/SM_Rock_03",
-    "Rock Collection 04 #4": "/Game/Rock_Collection_04/Meshes/Rock_04/StaticMeshes/SM_Rock_04",
-    "Rock Collection 04 #5": "/Game/Rock_Collection_04/Meshes/Rock_05/StaticMeshes/SM_Rock_05",
-    "Rock Collection 04 #6": "/Game/Rock_Collection_04/Meshes/Rock_06/StaticMeshes/SM_Rock_06",
-    "Rock Collection 04 #7": "/Game/Rock_Collection_04/Meshes/Rock_07/StaticMeshes/SM_Rock_07",
+}
+
+STAGE_LABELS = {
+    "05 Local Remesh/Tessellate": "Aether_VideoStage05_LocalRemesh",
+    "06 Sculpt/Paint": "Aether_VideoStage06_SculptPaint",
+    "07 Boolean Cave": "Aether_VideoStage07_BooleanCave",
+    "08 Texture Patch": "Aether_VideoStage08_TexturePatch",
+    "09 Spline Channel": "Aether_VideoStage09_SplineChannel",
+    "10 Spline Remesh": "Aether_VideoStage10_SplineRemesh",
+    "11 River": "Aether_VideoStage11_River",
+    "11 Water Zone": "Aether_VideoStage11_WaterZone",
 }
 
 MODIFIER_CLASS_NAMES = [
@@ -29,9 +33,10 @@ MODIFIER_CLASS_NAMES = [
     "BooleanModifier",
     "SplineModifier",
     "TexturePatchModifier",
-    "PatchModifier",
-    "NoiseModifier",
-    "MeshProjectModifier",
+    "RiverModifier",
+    "WaterModifier",
+    "WaterBodyRiver",
+    "WaterZone",
 ]
 
 MODIFIER_KEYWORDS = {
@@ -41,13 +46,14 @@ MODIFIER_KEYWORDS = {
     "Boolean": ("BooleanModifier",),
     "Spline": ("SplineModifier",),
     "Texture": ("TexturePatchModifier",),
-    "Water": ("LakeModifier", "RiverModifier", "WaterModifier"),
+    "Water": ("LakeModifier", "RiverModifier", "WaterModifier", "WaterBodyRiver"),
 }
 
 
 def log(lines, text=""):
-    lines.append(str(text))
-    unreal.log_warning(str(text))
+    text = str(text)
+    lines.append(text)
+    unreal.log_warning(text)
 
 
 def class_path(obj):
@@ -55,6 +61,13 @@ def class_path(obj):
         return obj.get_class().get_path_name()
     except Exception:
         return type(obj).__name__
+
+
+def actor_label(actor):
+    try:
+        return actor.get_actor_label()
+    except Exception:
+        return actor.get_name()
 
 
 def get_all_actors():
@@ -105,18 +118,20 @@ def main():
         for component in actor_components(actor):
             discovered_components.append((actor, component, class_path(component)))
 
-    authoritative = [
-        actor for actor in mesh_partition_actors
-        if actor.get_name() == "MeshTerrain_AetherWorld"
-        or actor.actor_has_tag("AetherProductionTerrain")
-    ]
+    authoritative = []
+    for actor in mesh_partition_actors:
+        tags = []
+        try:
+            tags = [str(tag) for tag in actor.get_editor_property("tags")]
+        except Exception:
+            pass
+        if actor.get_name() == "MeshTerrain_AetherWorld" or "AetherProductionTerrain" in tags:
+            authoritative.append(actor)
 
     log(lines, "")
     log(lines, "BASE TERRAIN")
     log(lines, "-" * 96)
     log(lines, f"Mesh Partition-like actors={len(mesh_partition_actors)}")
-    for actor in mesh_partition_actors[:20]:
-        log(lines, f"  {actor.get_name()} | {class_path(actor)}")
     log(lines, f"Authoritative Aether roots={len(authoritative)}")
     log(lines, f"Classic Landscape actors={len(classic_landscape_actors)}")
     base_pass = len(authoritative) == 1 and len(classic_landscape_actors) == 0
@@ -133,7 +148,7 @@ def main():
     log(lines, f"VIDEO_STAGE_ASSETS={'PASS' if asset_pass else 'CHECK'}")
 
     log(lines, "")
-    log(lines, "UE 5.8 MODIFIER CLASS AVAILABILITY")
+    log(lines, "UE 5.8 CLASS AVAILABILITY")
     log(lines, "-" * 96)
     for class_name in MODIFIER_CLASS_NAMES:
         cls = getattr(unreal, class_name, None)
@@ -148,6 +163,16 @@ def main():
         log(lines, f"{category:26s} exposed names={', '.join(matches[:30]) if matches else 'None'}")
 
     log(lines, "")
+    log(lines, "EXPECTED STAGE ACTORS")
+    log(lines, "-" * 96)
+    labels_present = {actor_label(actor): actor for actor in actors}
+    stage_present = {}
+    for stage, label in STAGE_LABELS.items():
+        present = label in labels_present
+        stage_present[stage] = present
+        log(lines, f"{'YES' if present else 'NO '} | {stage:28s} | {label}")
+
+    log(lines, "")
     log(lines, "MODIFIERS CURRENTLY PLACED IN AETHERWORLD")
     log(lines, "-" * 96)
     placed_by_category = {category: [] for category in MODIFIER_KEYWORDS}
@@ -156,7 +181,7 @@ def main():
         for category, keywords in MODIFIER_KEYWORDS.items():
             if any(keyword.lower() in combined.lower() for keyword in keywords):
                 placed_by_category[category].append(
-                    f"{actor.get_name()}.{component.get_name()} | {component_type}"
+                    f"{actor_label(actor)}.{component.get_name()} | {component_type}"
                 )
 
     for category, matches in placed_by_category.items():
@@ -164,13 +189,15 @@ def main():
         for match in matches[:30]:
             log(lines, f"  {match}")
 
-    local_remesh_count = len(placed_by_category["Local Remesh/Tessellate"])
-    spline_remesh_count = len(placed_by_category["Spline Remesh/Tessellate"])
-    sculpt_count = len(placed_by_category["Sculpt/Paint"])
-    boolean_count = len(placed_by_category["Boolean"])
-    spline_count = len(placed_by_category["Spline"])
-    texture_count = len(placed_by_category["Texture"])
-    water_count = len(placed_by_category["Water"])
+    local_remesh = stage_present["05 Local Remesh/Tessellate"]
+    sculpt = stage_present["06 Sculpt/Paint"]
+    boolean = stage_present["07 Boolean Cave"]
+    texture = stage_present["08 Texture Patch"]
+    spline = stage_present["09 Spline Channel"]
+    spline_remesh = stage_present["10 Spline Remesh"]
+    river = stage_present["11 River"]
+    water_zone = stage_present["11 Water Zone"]
+    water_components = len(placed_by_category["Water"])
 
     log(lines, "")
     log(lines, "FULL VIDEO CHECKPOINT")
@@ -178,28 +205,34 @@ def main():
     log(lines, f"01 Setup/plugins/open-world map        = {'COMPLETE' if base_pass else 'CHECK'}")
     log(lines, f"02 Heightmap/Mesh Partition base       = {'COMPLETE' if base_pass else 'CHECK'}")
     log(lines, f"03 MPD/material/weight assets          = {'COMPLETE' if asset_pass else 'CHECK'}")
-    log(lines, f"04 Local Remesh/Tessellate modifier    = {'COMPLETE' if local_remesh_count else 'NEXT'}")
-    log(lines, f"05 Sculpt and Paint modifier           = {'COMPLETE' if sculpt_count else 'NOT STARTED'}")
-    log(lines, f"06 Static Mesh / Boolean terrain work  = {'COMPLETE' if boolean_count else 'NOT STARTED'}")
-    log(lines, f"07 Texture Patch modifier              = {'COMPLETE' if texture_count else 'NOT STARTED'}")
-    log(lines, f"08 Spline terrain modifier             = {'COMPLETE' if spline_count else 'NOT STARTED'}")
-    log(lines, f"09 Spline Remesh modifier              = {'COMPLETE' if spline_remesh_count else 'NOT STARTED'}")
-    log(lines, f"10 Water terrain modifiers             = {'STARTED' if water_count else 'NOT STARTED'}")
-    log(lines, "11 Convert to classic Landscape         = DEFERRED BY DESIGN")
+    log(lines, f"04 Local Remesh/Tessellate modifier    = {'COMPLETE' if local_remesh else 'NEXT'}")
+    log(lines, f"05 Sculpt and Paint modifier           = {'COMPLETE' if sculpt else 'NOT STARTED'}")
+    log(lines, f"06 Static Mesh / Boolean terrain work  = {'COMPLETE' if boolean else 'NOT STARTED'}")
+    log(lines, f"07 Texture Patch modifier              = {'COMPLETE' if texture else 'NOT STARTED'}")
+    log(lines, f"08 Spline terrain modifier             = {'COMPLETE' if spline else 'NOT STARTED'}")
+    log(lines, f"09 Spline Remesh modifier              = {'COMPLETE' if spline_remesh else 'NOT STARTED'}")
+    water_complete = river and water_zone and water_components > 0
+    log(lines, f"10 Local river water integration       = {'COMPLETE' if water_complete else ('STARTED' if river or water_zone or water_components else 'NOT STARTED')}")
+    log(lines, "11 Riverbank material/biome integration = NOT STARTED")
+    log(lines, "12 Convert to classic Landscape         = DEFERRED BY DESIGN")
 
-    next_stage = "LOCAL_REMESH_TESSELLATE" if local_remesh_count == 0 else (
-        "SCULPT_PAINT" if sculpt_count == 0 else (
-            "BOOLEAN_CAVE" if boolean_count == 0 else (
-                "TEXTURE_MODIFIER" if texture_count == 0 else (
-                    "SPLINE_MODIFIER" if spline_count == 0 else (
-                        "SPLINE_REMESH" if spline_remesh_count == 0 else (
-                            "WATER_TERRAIN" if water_count == 0 else "VIDEO_WORKFLOW_COMPLETE"
-                        )
-                    )
-                )
-            )
-        )
-    )
+    if not local_remesh:
+        next_stage = "LOCAL_REMESH_TESSELLATE"
+    elif not sculpt:
+        next_stage = "SCULPT_PAINT"
+    elif not boolean:
+        next_stage = "BOOLEAN_CAVE"
+    elif not texture:
+        next_stage = "TEXTURE_MODIFIER"
+    elif not spline:
+        next_stage = "SPLINE_MODIFIER"
+    elif not spline_remesh:
+        next_stage = "SPLINE_REMESH"
+    elif not water_complete:
+        next_stage = "LOCAL_RIVER_WATER"
+    else:
+        next_stage = "RIVERBANK_MATERIAL_BIOME"
+
     log(lines, "")
     log(lines, f"AETHER_VIDEO_NEXT_STAGE={next_stage}")
     log(lines, "Modifier stages intentionally remain local until their editor preview is verified; no audit starts a whole-world compiled build.")
