@@ -25,6 +25,7 @@ STAGE_LABELS = {
     "10 Spline Remesh": "Aether_VideoStage10_SplineRemesh",
     "11 River": "Aether_VideoStage11_River",
     "11 Water Zone": "Aether_VideoStage11_WaterZone",
+    "12 Riverbank Wetland": "Aether_VideoStage12_RiverbankWetland",
 }
 
 MODIFIER_CLASS_NAMES = [
@@ -32,6 +33,7 @@ MODIFIER_CLASS_NAMES = [
     "SplineRemeshModifier",
     "BooleanModifier",
     "SplineModifier",
+    "SplineModifierWeightEntry",
     "TexturePatchModifier",
     "RiverModifier",
     "WaterModifier",
@@ -93,6 +95,45 @@ def actor_components(actor):
         except Exception:
             pass
     return components
+
+
+def stage12_configuration(actor):
+    result = {
+        "modifier_found": False,
+        "write_mode": None,
+        "weight_entries": 0,
+        "priority": None,
+        "valid": False,
+    }
+    if not actor:
+        return result
+
+    for component in actor_components(actor):
+        if "SplineModifier" not in class_path(component):
+            continue
+        result["modifier_found"] = True
+        try:
+            result["write_mode"] = int(component.get_editor_property("write_mode"))
+        except Exception:
+            pass
+        try:
+            result["weight_entries"] = len(list(component.get_editor_property("weight_channels")))
+        except Exception:
+            pass
+        try:
+            result["priority"] = float(component.get_editor_property("priority"))
+        except Exception:
+            pass
+        break
+
+    result["valid"] = bool(
+        result["modifier_found"]
+        and result["write_mode"] == 2
+        and result["weight_entries"] == 1
+        and result["priority"] is not None
+        and abs(result["priority"] - 55.0) <= 0.01
+    )
+    return result
 
 
 def main():
@@ -197,7 +238,19 @@ def main():
     spline_remesh = stage_present["10 Spline Remesh"]
     river = stage_present["11 River"]
     water_zone = stage_present["11 Water Zone"]
+    riverbank_actor = labels_present.get(STAGE_LABELS["12 Riverbank Wetland"])
+    riverbank_config = stage12_configuration(riverbank_actor)
     water_components = len(placed_by_category["Water"])
+
+    log(lines, "")
+    log(lines, "STAGE 12 RIVERBANK CONFIGURATION")
+    log(lines, "-" * 96)
+    log(lines, f"Actor present={'YES' if riverbank_actor else 'NO'}")
+    log(lines, f"SplineModifier present={riverbank_config['modifier_found']}")
+    log(lines, f"Write mode={riverbank_config['write_mode']} | expected=2 (Weights only)")
+    log(lines, f"Weight-channel entries={riverbank_config['weight_entries']} | expected=1")
+    log(lines, f"Priority={riverbank_config['priority']} | expected=55")
+    log(lines, f"Stage12 configuration valid={riverbank_config['valid']}")
 
     log(lines, "")
     log(lines, "FULL VIDEO CHECKPOINT")
@@ -213,8 +266,9 @@ def main():
     log(lines, f"09 Spline Remesh modifier              = {'COMPLETE' if spline_remesh else 'NOT STARTED'}")
     water_complete = river and water_zone and water_components > 0
     log(lines, f"10 Local river water integration       = {'COMPLETE' if water_complete else ('STARTED' if river or water_zone or water_components else 'NOT STARTED')}")
-    log(lines, "11 Riverbank material/biome integration = NOT STARTED")
-    log(lines, "12 Convert to classic Landscape         = DEFERRED BY DESIGN")
+    log(lines, f"11 Riverbank wetland weight integration = {'COMPLETE' if riverbank_config['valid'] else ('STARTED' if riverbank_actor else 'NOT STARTED')}")
+    log(lines, "12 River environment integration        = NOT STARTED")
+    log(lines, "13 Convert to classic Landscape         = DEFERRED BY DESIGN")
 
     if not local_remesh:
         next_stage = "LOCAL_REMESH_TESSELLATE"
@@ -230,8 +284,10 @@ def main():
         next_stage = "SPLINE_REMESH"
     elif not water_complete:
         next_stage = "LOCAL_RIVER_WATER"
+    elif not riverbank_config["valid"]:
+        next_stage = "RIVERBANK_WETLAND_WEIGHT"
     else:
-        next_stage = "RIVERBANK_MATERIAL_BIOME"
+        next_stage = "RIVER_ENVIRONMENT_INTEGRATION"
 
     log(lines, "")
     log(lines, f"AETHER_VIDEO_NEXT_STAGE={next_stage}")
