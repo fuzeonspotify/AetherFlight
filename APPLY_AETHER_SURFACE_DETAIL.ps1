@@ -17,20 +17,20 @@ if (!(Test-Path -LiteralPath $project)) {
     throw "AetherFlight.uproject was not found: $project"
 }
 if (!(Test-Path -LiteralPath $pythonScript)) {
-    throw "Aether surface-detail script was not found: $pythonScript"
+    throw "Aether surface-verification script was not found: $pythonScript"
 }
 if (Get-Process UnrealEditor -ErrorAction SilentlyContinue) {
-    throw "Close every Unreal Editor window before applying the surface-detail update."
+    throw "Close every Unreal Editor window before verifying the terrain surface."
 }
 
 Write-Host ""
-Write-Host "Aether surface-detail update is ready."
+Write-Host "Aether terrain surface verification is ready."
 Write-Host "Project: $project"
 Write-Host "Script:  $pythonScript"
 Write-Host ""
-Write-Host "The updater detects the material currently assigned to MPD_AetherWorld."
-Write-Host "It changes only verified material-instance texture/scalar overrides."
-Write-Host "It does not alter terrain geometry, collision, Mesh Partition resolution, displacement, or World Position Offset."
+Write-Host "The verifier checks the 15 existing Aether BaseColor, Normal, and Roughness overrides."
+Write-Host "It also confirms all displacement overrides remain at zero."
+Write-Host "It does not modify or save any Unreal asset."
 
 if ($NoLaunch) {
     Write-Host ""
@@ -58,7 +58,7 @@ $arguments = @(
 )
 
 Write-Host ""
-Write-Host "Launching Unreal Engine 5.8 and applying the surface-detail update..."
+Write-Host "Launching Unreal Engine 5.8 and verifying the terrain surface..."
 Write-Host "Unreal will close automatically after the Python script finishes."
 Write-Host "Waiting for Unreal to exit..."
 
@@ -67,23 +67,23 @@ Write-Host "Unreal exited with code $($process.ExitCode)."
 
 if (Test-Path -LiteralPath $reportPath) {
     Write-Host ""
-    Write-Host "AETHER SURFACE DETAIL FINISHED"
-    Write-Host "--------------------------------"
+    Write-Host "AETHER SURFACE VERIFICATION FINISHED"
+    Write-Host "------------------------------------"
     Get-Content -LiteralPath $reportPath
     exit 0
 }
 
 Write-Host ""
-Write-Host "AETHER SURFACE DETAIL FAILED" -ForegroundColor Red
-Write-Host "--------------------------------"
-Write-Host "The updater did not create its completion report."
+Write-Host "AETHER SURFACE VERIFICATION FAILED" -ForegroundColor Red
+Write-Host "------------------------------------"
+Write-Host "The verifier did not create its completion report."
 
 if (Test-Path -LiteralPath $logPath) {
     $logLines = Get-Content -LiteralPath $logPath
     $matches = $logLines | Select-String -Pattern (
-        "UpgradeAetherTerrainSurfaceDetail|Aether Verified Surface|" +
+        "UpgradeAetherTerrainSurfaceDetail|Aether Surface Verification|" +
         "LogPython: Error|Traceback|RuntimeError|TypeError|AttributeError|" +
-        "Missing required texture|rejected|verification failed|Python script executed with errors"
+        "verification failed|Python script executed with errors"
     ) -Context 8,22
 
     if ($matches) {
@@ -96,4 +96,4 @@ if (Test-Path -LiteralPath $logPath) {
     Write-Host "Unreal log was not found: $logPath"
 }
 
-throw "Aether surface-detail update failed. The Unreal traceback is printed above."
+throw "Aether surface verification failed. The Unreal traceback is printed above."
