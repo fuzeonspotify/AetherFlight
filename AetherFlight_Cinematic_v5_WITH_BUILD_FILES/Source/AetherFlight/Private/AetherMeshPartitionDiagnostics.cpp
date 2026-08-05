@@ -92,8 +92,9 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
         const bool bShouldCreatePhysics = Component->ShouldCreatePhysicsState();
         const bool bPhysicsStateCreated = Component->IsPhysicsStateCreated();
         const bool bValidPhysicsState = Component->HasValidPhysicsState();
-        const bool bCollisionDataValid = Component->GetMeshCollisionData().IsValid();
-        const bool bCollisionMeshValid = Component->GetCollisionMesh() != nullptr;
+        const auto MeshCollisionData = Component->GetMeshCollisionData();
+        const bool bCollisionDataValid = MeshCollisionData.IsValid();
+        const bool bCollisionMeshValid = bCollisionDataValid && MeshCollisionData->Mesh.IsSet();
         const bool bContainsTriMeshData = Component->ContainsPhysicsTriMeshData(true);
         const ECollisionEnabled::Type CollisionEnabled = Component->GetCollisionEnabled();
         const ECollisionResponse VisibilityResponse = Component->GetCollisionResponseToChannel(ECC_Visibility);
