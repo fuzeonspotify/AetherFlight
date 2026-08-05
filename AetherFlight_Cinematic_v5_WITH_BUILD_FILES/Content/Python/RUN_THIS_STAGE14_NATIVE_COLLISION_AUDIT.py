@@ -1,4 +1,4 @@
-"""Run the read-only native Stage 14 Mesh Partition collision audit during PIE."""
+"""Run the read-only native Stage 14 river collision registration audit during PIE."""
 
 from pathlib import Path
 import unreal
@@ -34,7 +34,7 @@ try:
 except Exception as exc:
     failure = "\n".join(
         (
-            "AETHER STAGE 14H - NATIVE MESH PARTITION COLLISION AUDIT",
+            "AETHER STAGE 14I - NATIVE RIVER COLLISION REGISTRATION AUDIT",
             "=" * 100,
             "NATIVE_AUDIT_RESULT=FAIL",
             f"ERROR={type(exc).__name__}: {exc}",
