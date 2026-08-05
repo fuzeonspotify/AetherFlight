@@ -17,5 +17,11 @@ public class AetherFlight : ModuleRules
             "ProceduralMeshComponent",
             "AssetRegistry"
         });
+
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+            "MeshPartition",
+            "PhysicsCore"
+        });
     }
 }
