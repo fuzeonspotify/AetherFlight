@@ -21,7 +21,6 @@ public class AetherFlight : ModuleRules
         PrivateDependencyModuleNames.AddRange(new string[]
         {
             "MeshPartition",
-            "MaterialCache",
             "PhysicsCore"
         });
     }
