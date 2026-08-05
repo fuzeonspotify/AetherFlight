@@ -8,6 +8,8 @@
 
 namespace
 {
+using FMeshPartitionCollisionComponent = UE::MeshPartition::UMeshPartitionCollisionComponent;
+
 UWorld* FindPIEWorld()
 {
     if (!GEngine)
@@ -64,16 +66,15 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
     int32 BodySetupFailedPhysicsMeshesCount = 0;
     int32 BodySetupHasCookedDataCount = 0;
     int32 BodySetupTriMeshGeometryCount = 0;
-    int32 BodySetupChaosTriMeshCount = 0;
     int32 QueryCollisionEnabledCount = 0;
     int32 VisibilityBlockingCount = 0;
     int32 DetailCount = 0;
 
     Lines.Add(FString::Printf(TEXT("PIE_WORLD=%s"), *World->GetPathName()));
 
-    for (TObjectIterator<UMeshPartitionCollisionComponent> It; It; ++It)
+    for (TObjectIterator<FMeshPartitionCollisionComponent> It; It; ++It)
     {
-        UMeshPartitionCollisionComponent* Component = *It;
+        FMeshPartitionCollisionComponent* Component = *It;
         if (!Component || Component->IsTemplate() || Component->GetWorld() != World)
         {
             continue;
@@ -116,7 +117,6 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
         bool bBodyFailed = false;
         bool bBodyHasCookedData = false;
         int32 TriMeshGeometryCount = 0;
-        int32 ChaosTriMeshCount = 0;
 
         if (BodySetup)
         {
@@ -125,42 +125,52 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
             bBodyFailed = BodySetup->bFailedToCreatePhysicsMeshes;
             bBodyHasCookedData = BodySetup->bHasCookedCollisionData;
             TriMeshGeometryCount = BodySetup->TriMeshGeometries.Num();
-            ChaosTriMeshCount = BodySetup->ChaosTriMeshes.Num();
 
             BodySetupCreatedPhysicsMeshesCount += bBodyCreated ? 1 : 0;
             BodySetupFailedPhysicsMeshesCount += bBodyFailed ? 1 : 0;
             BodySetupHasCookedDataCount += bBodyHasCookedData ? 1 : 0;
             BodySetupTriMeshGeometryCount += TriMeshGeometryCount;
-            BodySetupChaosTriMeshCount += ChaosTriMeshCount;
         }
 
         if (DetailCount < 24)
         {
             const FString OwnerName = Owner ? Owner->GetName() : TEXT("None");
-            Lines.Add(FString::Printf(
-                TEXT("COMPONENT_%d=owner:%s name:%s registered:%s active:%s should_create_physics:%s physics_state_created:%s valid_physics_state:%s collision_enabled:%d visibility_response:%d nonzero_bounds:%s bounds_origin:%s bounds_extent:%s collision_data:%s collision_mesh:%s contains_trimesh:%s body_setup:%s body_created:%s body_failed:%s body_has_cooked_data:%s trimesh_geometries:%d chaos_trimeshes:%d"),
+            const FString ComponentName = Component->GetName();
+            const FString BoundsOrigin = Bounds.Origin.ToString();
+            const FString BoundsExtent = Bounds.BoxExtent.ToString();
+
+            FString Detail = FString::Printf(
+                TEXT("COMPONENT_%d=owner:%s name:%s"),
                 DetailCount,
                 *OwnerName,
-                *Component->GetName(),
+                *ComponentName);
+            Detail += FString::Printf(
+                TEXT(" registered:%s active:%s should_create_physics:%s physics_state_created:%s valid_physics_state:%s"),
                 BoolText(bRegistered),
                 BoolText(bActive),
                 BoolText(bShouldCreatePhysics),
                 BoolText(bPhysicsStateCreated),
-                BoolText(bValidPhysicsState),
+                BoolText(bValidPhysicsState));
+            Detail += FString::Printf(
+                TEXT(" collision_enabled:%d visibility_response:%d nonzero_bounds:%s bounds_origin:%s bounds_extent:%s"),
                 static_cast<int32>(CollisionEnabled),
                 static_cast<int32>(VisibilityResponse),
                 BoolText(bNonZeroBounds),
-                *Bounds.Origin.ToString(),
-                *Bounds.BoxExtent.ToString(),
+                *BoundsOrigin,
+                *BoundsExtent);
+            Detail += FString::Printf(
+                TEXT(" collision_data:%s collision_mesh:%s contains_trimesh:%s body_setup:%s"),
                 BoolText(bCollisionDataValid),
                 BoolText(bCollisionMeshValid),
                 BoolText(bContainsTriMeshData),
-                BoolText(BodySetup != nullptr),
+                BoolText(BodySetup != nullptr));
+            Detail += FString::Printf(
+                TEXT(" body_created:%s body_failed:%s body_has_cooked_data:%s trimesh_geometries:%d"),
                 BoolText(bBodyCreated),
                 BoolText(bBodyFailed),
                 BoolText(bBodyHasCookedData),
-                TriMeshGeometryCount,
-                ChaosTriMeshCount));
+                TriMeshGeometryCount);
+            Lines.Add(MoveTemp(Detail));
             ++DetailCount;
         }
     }
@@ -186,7 +196,6 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
     Lines.Add(FString::Printf(TEXT("BODY_SETUP_FAILED_PHYSICS_MESHES_COMPONENTS=%d"), BodySetupFailedPhysicsMeshesCount));
     Lines.Add(FString::Printf(TEXT("BODY_SETUP_HAS_COOKED_DATA_COMPONENTS=%d"), BodySetupHasCookedDataCount));
     Lines.Add(FString::Printf(TEXT("BODY_SETUP_TRI_MESH_GEOMETRIES=%d"), BodySetupTriMeshGeometryCount));
-    Lines.Add(FString::Printf(TEXT("BODY_SETUP_CHAOS_TRI_MESHES=%d"), BodySetupChaosTriMeshCount));
 
     FString Diagnosis;
     if (ComponentCount == 0)
@@ -205,7 +214,7 @@ FString UAetherMeshPartitionDiagnostics::AuditPIEMeshPartitionCollision()
     {
         Diagnosis = TEXT("BODY_SETUP_PHYSICS_MESH_CREATION_FAILED");
     }
-    else if (BodySetupCreatedPhysicsMeshesCount == 0 || (BodySetupTriMeshGeometryCount + BodySetupChaosTriMeshCount) == 0)
+    else if (BodySetupCreatedPhysicsMeshesCount == 0 || BodySetupTriMeshGeometryCount == 0)
     {
         Diagnosis = TEXT("BODY_SETUP_EXISTS_BUT_PHYSICS_TRIANGLE_MESHES_WERE_NOT_CREATED");
     }
