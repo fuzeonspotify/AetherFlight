@@ -7,14 +7,22 @@ AetherWorld Landscape, flight code, weather, or terrain material.
 
 1. Build the C++ project with `BUILD_ME_FIRST.cmd` or `Build_AetherFlight.bat`.
 2. Open Unreal Editor and load `/Game/Maps/AetherWorld`.
-3. Run:
+3. In the World Partition window, load the full Landscape region that should
+   receive biomes. Unloaded Landscape cells cannot be sampled by editor traces.
+4. Run:
 
    `Content/Python/InstallProceduralBiomes.py`
 
    In Unreal, use **Tools > Execute Python Script** and select that file.
-4. The script creates or reuses an actor named **Aether Procedural Biomes**,
+5. The script creates or reuses an actor named **Aether Procedural Biomes**,
    discovers suitable Static Mesh assets, fills four biome profiles, builds the
    instances, and saves the open level.
+
+The installer marks the biome actor as **not spatially loaded**, so it remains
+available while flying across World Partition cells. After a successful editor
+build, it also turns off `Build On Begin Play`; the saved HISM instances are
+reused instead of performing tens of thousands of Landscape traces every time
+the game starts.
 
 When no vegetation or rock meshes exist in `/Game`, the actor is still
 installed. Add Fab/Megascans assets and run the installer again.
@@ -46,14 +54,21 @@ Select **Aether Procedural Biomes** in the World Outliner.
 - `Build Biomes`, `Clear Biomes`, and `Reset Default Biomes` are buttons in the
   actor Details panel.
 
+After changing profiles or mesh entries, load the intended World Partition
+region, click **Build Biomes**, and save the level. Turn `Build On Begin Play`
+back on only when runtime regeneration is specifically desired and the required
+Landscape cells will be loaded at that time.
+
 ## Performance behavior
 
 The system creates one Hierarchical Instanced Static Mesh component per unique
-mesh, so thousands of instances share draw calls. Collision is disabled on
-generated biome instances by default. Start/end cull distances are editable.
+mesh, so thousands of instances share components and can use instance culling.
+Collision is disabled on generated biome instances by default. Start/end cull
+distances are editable.
 
-Generation uses one landscape trace per sample. It is intended to run in the
-editor or once at startup, not every frame.
+Generation uses one Landscape trace per sample. The recommended workflow builds
+and saves the instances in the editor rather than regenerating them every frame
+or every startup.
 
 ## Compatibility with the existing world director
 
