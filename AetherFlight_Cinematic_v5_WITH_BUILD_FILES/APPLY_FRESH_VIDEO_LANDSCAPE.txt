@@ -1,0 +1,23 @@
+FRESH HEIGHTMAP LANDSCAPE
+
+1. Pull agent/procedural-biomes and extract AetherFlight_Fresh_Video_Landscape_Patch.zip into C:\Projects\AetherFlight.
+
+2. Tools > Execute Python Script
+   Content/Python/InstallFreshVideoLandscape.py
+
+3. Landscape > Manage > New > Import from File
+   SourceAssets/VideoLandscape/Heightmaps/Heightmap_Out_2017_16bit.png
+
+   63 quads | 2x2 sections | 16x16 components | 2017x2017
+   Location 0,0,0 | Scale 400,400,400 | Enable Edit Layers
+   Material: /Game/Aether/ProductionTerrain/M_Landscape_Production
+
+4. Paint tab: import the four files under
+   SourceAssets/VideoLandscape/Weightmaps
+
+5. Tools > Execute Python Script
+   Content/Python/FinalizeFreshVideoLandscape.py
+
+6. Landscape > Build Nanite Only, wait, then Save All.
+
+Full details: FRESH_VIDEO_LANDSCAPE_SETUP.md
