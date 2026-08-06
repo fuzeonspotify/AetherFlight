@@ -232,11 +232,11 @@ void AProceduralBiomeDirector::ClearBiomes()
     Modify();
 #endif
 
-    TArray<UHierarchicalInstancedStaticMeshComponent*> InstanceComponents;
-    GetComponents(InstanceComponents);
+    TArray<UHierarchicalInstancedStaticMeshComponent*> GeneratedComponents;
+    GetComponents(GeneratedComponents);
 
     const FName Tag = GeneratedComponentTag();
-    for (UHierarchicalInstancedStaticMeshComponent* Component : InstanceComponents)
+    for (UHierarchicalInstancedStaticMeshComponent* Component : GeneratedComponents)
     {
         if (!IsValid(Component) || !Component->ComponentHasTag(Tag))
         {
