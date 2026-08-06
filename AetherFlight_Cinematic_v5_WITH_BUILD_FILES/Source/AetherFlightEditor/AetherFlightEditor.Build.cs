@@ -1,3 +1,4 @@
+using System.IO;
 using UnrealBuildTool;
 
 public class AetherFlightEditor : ModuleRules
@@ -19,5 +20,15 @@ public class AetherFlightEditor : ModuleRules
             "MeshPartition",
             "MeshPartitionEditor"
         });
+
+        // UE 5.8.1's public MeshPartitionCompiledSection.h includes
+        // MaterialCache/MaterialCacheVirtualTexture.h, which currently lives
+        // under the Engine module's Private tree. MeshPartitionEditor can see
+        // that path internally, but an external editor module including
+        // MeshPartitionEditorComponent.h cannot unless it is added explicitly.
+        // Keep this workaround editor-only and scoped to this private module.
+        PrivateIncludePaths.Add(
+            Path.Combine(EngineDirectory, "Source", "Runtime", "Engine", "Private")
+        );
     }
 }
