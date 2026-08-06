@@ -137,6 +137,7 @@ def _find_or_spawn_director():
 
 def main() -> None:
     director = _find_or_spawn_director()
+    director.set_editor_property("is_spatially_loaded", False)
     director.reset_default_biomes()
 
     trees = _prepend_legacy(_discover_meshes(TREE_KEYWORDS), LEGACY_TREE_PATH)
@@ -170,20 +171,33 @@ def main() -> None:
     director.set_editor_property("biomes", biomes)
     discovered_count = len(trees) + len(ground_cover) + len(rocks)
 
+    generated_count = 0
     if discovered_count > 0:
         director.build_biomes()
+        generated_count = int(director.get_editor_property("last_generated_instance_count"))
+        if generated_count > 0:
+            # Preserve the editor-built HISM components and avoid tens of thousands
+            # of Landscape traces every time PIE or the packaged game starts.
+            director.set_editor_property("build_on_begin_play", False)
 
     unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()
 
-    if discovered_count > 0:
+    if generated_count > 0:
         message = (
             "Procedural biomes are installed and built.\n\n"
             f"Tree meshes: {len(trees)}\n"
             f"Ground-cover meshes: {len(ground_cover)}\n"
             f"Rock meshes: {len(rocks)}\n"
-            f"Generated instances: {director.get_editor_property('last_generated_instance_count')}\n\n"
+            f"Generated instances: {generated_count}\n\n"
             "Select 'Aether Procedural Biomes' in the Outliner to tune density, "
             "noise, ranges, and mesh weights."
+        )
+    elif discovered_count > 0:
+        message = (
+            "Biome meshes were found, but no instances were generated.\n\n"
+            "In the World Partition window, load the full Landscape region, then run this "
+            "script again. You can also select the biome actor and reduce Sample Count "
+            "while testing."
         )
     else:
         message = (
