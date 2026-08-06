@@ -78,7 +78,7 @@ if created:
     finish(terrain)
 
 
-ocean, created = material_asset("M_Ocean_Cinematic", rebuild=True)
+# Preserve the dedicated Single Layer Water graph when the graphics installer is rerun.\n# Use InstallExtremeOceanMaterial_UE58.py when an ocean rebuild is intentional.\nocean, created = material_asset("M_Ocean_Cinematic", rebuild=False)
 if created:
     deep = color(ocean, (0.0025, 0.018, 0.030), -700, -100)
     horizon = color(ocean, (0.045, 0.19, 0.22), -700, 30)

@@ -7,6 +7,7 @@
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UHierarchicalInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
 class UPostProcessComponent;
 class UProceduralMeshComponent;
 class USceneComponent;
@@ -45,6 +46,7 @@ public:
     FTransform GetFlightSpawnTransform() const;
 
     FVector GetTurbulenceForce(const FVector& WorldLocation, float TimeSeconds, float MassKg) const;
+    float GetCondensationHumidity() const;
 
     static AProceduralWorldDirector* Find(UWorld* World);
 
@@ -57,6 +59,9 @@ protected:
 
     UPROPERTY(VisibleAnywhere, Category = "World")
     UProceduralMeshComponent* Ocean;
+
+    UPROPERTY(Transient)
+    UMaterialInstanceDynamic* OceanMaterialInstance = nullptr;
 
     UPROPERTY(VisibleAnywhere, Category = "World")
     UStaticMeshComponent* Runway;
@@ -100,6 +105,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "World")
     float TerrainSizeKilometers = 48.0f;
 
+    // This project has an authored World Partition Landscape. Keeping the
+    // fallback opt-in prevents a late-loading Landscape from ever overlapping
+    // the low-detail procedural mesh.
+    UPROPERTY(EditAnywhere, Category = "World|Fallback")
+    bool bAllowRuntimePlaceholderTerrain = false;
+
     UPROPERTY(EditAnywhere, Category = "Weather")
     EAetherWeather Weather = EAetherWeather::BrokenClouds;
 
@@ -112,10 +123,13 @@ protected:
 private:
     void GenerateTerrain();
     void GenerateOcean();
+    void UpdateOceanSurface(float DeltaSeconds);
     void GenerateRunwayMarkings();
     void GenerateEnvironmentInstances();
     void ConfigureAtmosphere();
     void ApplyWeather(EAetherWeather NewWeather, bool bInstant);
+    void DisableRuntimePlaceholderTerrain();
+    void ReconcileLandscapeState();
     bool HasProductionLandscape() const;
     bool HasAuthoredWater() const;
     bool SampleGround(float XCentimeters, float YCentimeters, float& OutHeightMeters, FVector& OutNormal) const;
@@ -129,8 +143,18 @@ private:
 
     bool bGenerated = false;
     bool bUsingProductionLandscape = false;
+    float LandscapeReconcileAccumulator = 0.0f;
+    int32 LandscapeReconcilePassesRemaining = 24;
     float CurrentStorminess = 0.0f;
     float TargetStorminess = 0.0f;
+    float CurrentSeaState = 0.68f;
+    float TargetSeaState = 0.68f;
+    float CurrentOceanRoughness = 0.075f;
+    float TargetOceanRoughness = 0.075f;
+    float CurrentWaveChoppiness = 0.42f;
+    float TargetWaveChoppiness = 0.42f;
+    float CurrentFoamAmount = 0.18f;
+    float TargetFoamAmount = 0.18f;
     float TargetFogDensity = 0.002f;
     float TargetSunIntensity = 7.0f;
     FLinearColor TargetSunColor = FLinearColor::White;

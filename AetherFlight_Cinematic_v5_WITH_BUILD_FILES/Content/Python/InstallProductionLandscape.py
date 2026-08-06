@@ -14,7 +14,7 @@ PROJECT_DIR = Path(unreal.Paths.project_dir())
 SOURCE_DIR = PROJECT_DIR / "SourceAssets" / "ProductionTerrain" / "Textures"
 PACKAGE = "/Game/Aether/ProductionTerrain"
 TEXTURE_PACKAGE = f"{PACKAGE}/Textures"
-LAYERS = ("Grass", "Rock", "Scree", "Snow")
+LAYERS = ("Grass", "ForestFloor", "Rock", "Scree", "Snow", "Sand", "Wetland")
 
 
 def log(message: str) -> None:
@@ -235,7 +235,8 @@ def main() -> None:
     unreal.EditorDialog.show_message(
         "Aether Production Landscape",
         "Production terrain textures and M_Landscape_Production are ready.\n\n"
-        "Next: follow PRODUCTION_LANDSCAPE_SETUP.md to import the 4033 heightmap.",
+        "Next: run UpgradeProductionLandscapeMaterial_UE58_v6.py, then follow "
+        "PRODUCTION_WORLD_V2_SETUP.md to import the 4033 heightmap.",
         unreal.AppMsgType.OK,
     )
 
