@@ -21,14 +21,13 @@ public class AetherFlightEditor : ModuleRules
             "MeshPartitionEditor"
         });
 
-        // UE 5.8.1's public MeshPartitionCompiledSection.h includes the
-        // Engine-internal MaterialCache/MaterialCacheVirtualTexture.h path.
-        // Launcher builds do not expose that path consistently to external
-        // editor modules, so resolve the editor-only compatibility declaration
-        // from this module before falling back to the Engine private tree.
+        // UE 5.8.1's public MeshPartitionCompiledSection.h includes
+        // MaterialCache/MaterialCacheVirtualTexture.h from Engine/Classes.
+        // Launcher builds do not consistently expose that legacy Classes root
+        // to external editor modules, so add the real Engine header location.
         PrivateIncludePaths.AddRange(new string[]
         {
-            Path.Combine(ModuleDirectory, "Private"),
+            Path.Combine(EngineDirectory, "Source", "Runtime", "Engine", "Classes"),
             Path.Combine(EngineDirectory, "Source", "Runtime", "Engine", "Private")
         });
     }
