@@ -8,6 +8,10 @@ public class AetherFlightEditorTarget : TargetRules
         Type = TargetType.Editor;
         DefaultBuildSettings = BuildSettingsVersion.V7;
         IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-        ExtraModuleNames.Add("AetherFlight");
+        ExtraModuleNames.AddRange(new string[]
+        {
+            "AetherFlight",
+            "AetherFlightEditor"
+        });
     }
 }

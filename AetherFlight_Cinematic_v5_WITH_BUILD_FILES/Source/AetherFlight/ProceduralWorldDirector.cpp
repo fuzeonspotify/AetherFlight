@@ -12,10 +12,29 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "KismetProceduralMeshLibrary.h"
+#include "Landscape.h"
 #include "LandscapeProxy.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+    bool IsAuthoritativeMeshTerrainActor(const AActor* Actor)
+    {
+        if (!IsValid(Actor) || Actor->IsActorBeingDestroyed())
+        {
+            return false;
+        }
+
+        // Mesh Terrain is allowed to coexist while it is being authored.  It
+        // becomes the runtime ground only after the guarded finalizer adds this
+        // tag, so an unfinished Mesh Partition can never hide the working
+        // production Landscape.
+        return Actor->ActorHasTag(TEXT("AetherProductionTerrain"));
+    }
+}
 
 AProceduralWorldDirector::AProceduralWorldDirector()
 {
@@ -32,6 +51,8 @@ AProceduralWorldDirector::AProceduralWorldDirector()
     Ocean = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Ocean"));
     Ocean->SetupAttachment(Root);
     Ocean->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Ocean->SetCastShadow(false);
+    Ocean->SetTranslucentSortPriority(-5);
 
     Runway = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Runway"));
     Runway->SetupAttachment(Root);
@@ -138,11 +159,22 @@ void AProceduralWorldDirector::BeginPlay()
 void AProceduralWorldDirector::Tick(const float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    // World Partition can stream Landscape proxies after BeginPlay. Recheck
+    // briefly so late legacy proxies are hidden and a fallback mesh can never
+    // remain underneath the production terrain.
+    LandscapeReconcileAccumulator += DeltaSeconds;
+    if (LandscapeReconcilePassesRemaining > 0 && LandscapeReconcileAccumulator >= 0.5f)
+    {
+        LandscapeReconcileAccumulator = 0.0f;
+        --LandscapeReconcilePassesRemaining;
+        ReconcileLandscapeState();
+    }
     CurrentStorminess = FMath::FInterpTo(CurrentStorminess, TargetStorminess, DeltaSeconds, 0.22f);
     HeightFog->SetFogDensity(FMath::FInterpTo(HeightFog->FogDensity, TargetFogDensity, DeltaSeconds, 0.28f));
     Sun->SetIntensity(FMath::FInterpTo(Sun->Intensity, TargetSunIntensity, DeltaSeconds, 0.25f));
     Sun->SetLightColor(FMath::Lerp(Sun->GetLightColor(), TargetSunColor, FMath::Clamp(DeltaSeconds * 0.3f, 0.0f, 1.0f)));
     Sun->SetWorldRotation(FMath::RInterpTo(Sun->GetComponentRotation(), TargetSunRotation, DeltaSeconds, 0.18f));
+    UpdateOceanSurface(DeltaSeconds);
 }
 
 void AProceduralWorldDirector::EnsureWorldGenerated()
@@ -153,15 +185,13 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
     }
     bGenerated = true;
     AirbaseLocation.Z = AirbaseElevationMeters * 100.0f;
-    bUsingProductionLandscape = HasProductionLandscape();
+    ReconcileLandscapeState();
     if (bUsingProductionLandscape)
     {
-        Terrain->ClearAllMeshSections();
-        Terrain->SetVisibility(false, true);
-        Terrain->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        UE_LOG(LogTemp, Display, TEXT("[Aether] Production Landscape detected; runtime placeholder terrain is disabled."));
+        DisableRuntimePlaceholderTerrain();
+        UE_LOG(LogTemp, Display, TEXT("[Aether] Authored production terrain detected; runtime placeholder terrain is disabled."));
     }
-    else
+    else if (bAllowRuntimePlaceholderTerrain)
     {
         Terrain->SetVisibility(true, true);
         Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -169,11 +199,18 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
         UE_LOG(LogTemp, Warning,
             TEXT("[Aether] No Landscape actor found. Using the low-detail fallback terrain. Import the production 4033 heightmap."));
     }
+    else
+    {
+        DisableRuntimePlaceholderTerrain();
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Aether Terrain] No active production Landscape is loaded yet; placeholder terrain remains disabled to prevent overlap."));
+    }
 
     if (HasAuthoredWater())
     {
         Ocean->ClearAllMeshSections();
         Ocean->SetVisibility(false, true);
+        OceanMaterialInstance = nullptr;
         UE_LOG(LogTemp, Display, TEXT("[Aether] Authored water detected; runtime ocean plane is disabled."));
     }
     else
@@ -182,7 +219,22 @@ void AProceduralWorldDirector::EnsureWorldGenerated()
         GenerateOcean();
     }
     GenerateRunwayMarkings();
-    GenerateEnvironmentInstances();
+    if (bUsingProductionLandscape)
+    {
+        // Production foliage is owned by AetherBiomeScatterActor. These old
+        // single-mesh fallback clusters could otherwise float on a legacy
+        // collision surface and double the instance count.
+        ForestInstances->ClearInstances();
+        ForestInstances->SetVisibility(false, true);
+        RockInstances->ClearInstances();
+        RockInstances->SetVisibility(false, true);
+    }
+    else if (bAllowRuntimePlaceholderTerrain)
+    {
+        ForestInstances->SetVisibility(true, true);
+        RockInstances->SetVisibility(true, true);
+        GenerateEnvironmentInstances();
+    }
     ConfigureAtmosphere();
 
     Runway->SetRelativeLocation(AirbaseLocation + FVector(0.0f, 0.0f, 45.0f));
@@ -220,6 +272,18 @@ FVector AProceduralWorldDirector::GetTurbulenceForce(const FVector& WorldLocatio
         FMath::Sin(Y + TimeSeconds * 0.77f),
         FMath::Sin(X * 1.7f - TimeSeconds * 1.13f),
         FMath::Sin(X + Y + TimeSeconds * 1.91f) * 1.55f) * Gust;
+}
+
+float AProceduralWorldDirector::GetCondensationHumidity() const
+{
+    switch (Weather)
+    {
+    case EAetherWeather::GoldenClear: return 0.34f;
+    case EAetherWeather::BrokenClouds: return 0.76f;
+    case EAetherWeather::StormFront: return 0.96f;
+    case EAetherWeather::BlueHour: return 0.64f;
+    default: return 0.68f;
+    }
 }
 
 AProceduralWorldDirector* AProceduralWorldDirector::Find(UWorld* World)
@@ -315,7 +379,9 @@ void AProceduralWorldDirector::GenerateTerrain()
 void AProceduralWorldDirector::GenerateOcean()
 {
     const float Extent = TerrainSizeKilometers * 65000.0f;
-    constexpr int32 Resolution = 65;
+    // 257x257 keeps the fallback ocean inexpensive while giving vertex displacement
+    // enough geometry for kilometre-scale swells. Fine ripples remain pixel-normal detail.
+    constexpr int32 Resolution = 257;
     const float Step = Extent * 2.0f / static_cast<float>(Resolution - 1);
 
     TArray<FVector> Vertices;
@@ -338,7 +404,7 @@ void AProceduralWorldDirector::GenerateOcean()
             const float YCm = -Extent + Y * Step;
             Vertices.Add(FVector(XCm, YCm, -28.0f));
             Normals.Add(FVector::UpVector);
-            UVs.Add(FVector2D(X / 2.0f, Y / 2.0f));
+            UVs.Add(FVector2D(XCm * 0.0001f, YCm * 0.0001f));
             Tangents.Add(FProcMeshTangent(FVector(1.0f, 0.0f, 0.0f), false));
             const float Variation = ValueNoise(XCm * 0.000006f + 70.0f, YCm * 0.000006f - 22.0f);
             Colors.Add(FMath::Lerp(
@@ -367,6 +433,36 @@ void AProceduralWorldDirector::GenerateOcean()
     if (Material)
     {
         Ocean->SetMaterial(0, Material);
+        OceanMaterialInstance = Ocean->CreateDynamicMaterialInstance(0, Material);
+        if (OceanMaterialInstance)
+        {
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("WaveChoppiness"), CurrentWaveChoppiness);
+            OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
+            UE_LOG(LogTemp, Display, TEXT("[Aether Water] Dynamic Single Layer Water ocean is active."));
+        }
+    }
+}
+
+void AProceduralWorldDirector::UpdateOceanSurface(const float DeltaSeconds)
+{
+    if (DeltaSeconds > 0.0f)
+    {
+        CurrentSeaState = FMath::FInterpTo(CurrentSeaState, TargetSeaState, DeltaSeconds, 0.16f);
+        CurrentOceanRoughness = FMath::FInterpTo(
+            CurrentOceanRoughness, TargetOceanRoughness, DeltaSeconds, 0.22f);
+        CurrentWaveChoppiness = FMath::FInterpTo(
+            CurrentWaveChoppiness, TargetWaveChoppiness, DeltaSeconds, 0.18f);
+        CurrentFoamAmount = FMath::FInterpTo(CurrentFoamAmount, TargetFoamAmount, DeltaSeconds, 0.18f);
+    }
+
+    if (OceanMaterialInstance)
+    {
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("SeaState"), CurrentSeaState);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("OceanRoughness"), CurrentOceanRoughness);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("WaveChoppiness"), CurrentWaveChoppiness);
+        OceanMaterialInstance->SetScalarParameterValue(TEXT("FoamAmount"), CurrentFoamAmount);
     }
 }
 
@@ -501,14 +597,127 @@ bool AProceduralWorldDirector::HasProductionLandscape() const
         return false;
     }
 
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (IsAuthoritativeMeshTerrainActor(*It))
+        {
+            return true;
+        }
+    }
+
     for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
     {
-        if (IsValid(*It) && !It->IsActorBeingDestroyed())
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        const bool bLegacy = Proxy->ActorHasTag(TEXT("AetherLegacyLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherLegacyLandscape")));
+        if (!bLegacy)
         {
             return true;
         }
     }
     return false;
+}
+
+void AProceduralWorldDirector::DisableRuntimePlaceholderTerrain()
+{
+    if (Terrain)
+    {
+        Terrain->ClearAllMeshSections();
+        Terrain->SetVisibility(false, true);
+        Terrain->SetHiddenInGame(true, true);
+        Terrain->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+}
+
+void AProceduralWorldDirector::ReconcileLandscapeState()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    bool bMeshTerrainAuthoritative = false;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (IsAuthoritativeMeshTerrainActor(*It))
+        {
+            bMeshTerrainAuthoritative = true;
+            break;
+        }
+    }
+
+    ALandscape* ActiveRoot = nullptr;
+    for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+    {
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        if (Proxy->ActorHasTag(TEXT("AetherProductionLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherProductionLandscape"))))
+        {
+            ActiveRoot = RootLandscape;
+            break;
+        }
+    }
+
+    bool bFoundUsableLandscape = false;
+    int32 DisabledLegacyProxyCount = 0;
+    for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+    {
+        ALandscapeProxy* Proxy = *It;
+        if (!IsValid(Proxy) || Proxy->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+
+        ALandscape* RootLandscape = Proxy->GetLandscapeActor();
+        const bool bTaggedLegacy = Proxy->ActorHasTag(TEXT("AetherLegacyLandscape"))
+            || (IsValid(RootLandscape)
+                && RootLandscape->ActorHasTag(TEXT("AetherLegacyLandscape")));
+        const bool bDifferentRoot = IsValid(ActiveRoot)
+            && IsValid(RootLandscape) && RootLandscape != ActiveRoot;
+        if (bMeshTerrainAuthoritative || bTaggedLegacy || bDifferentRoot)
+        {
+            Proxy->SetActorHiddenInGame(true);
+            Proxy->SetActorEnableCollision(false);
+            Proxy->SetActorTickEnabled(false);
+            ++DisabledLegacyProxyCount;
+            continue;
+        }
+
+        bFoundUsableLandscape = true;
+    }
+
+    const bool bFoundUsableAuthoredTerrain =
+        bMeshTerrainAuthoritative || bFoundUsableLandscape;
+    if (bFoundUsableAuthoredTerrain)
+    {
+        const bool bWasUsingFallback = !bUsingProductionLandscape || (Terrain && Terrain->IsVisible());
+        bUsingProductionLandscape = true;
+        DisableRuntimePlaceholderTerrain();
+        ForestInstances->ClearInstances();
+        ForestInstances->SetVisibility(false, true);
+        RockInstances->ClearInstances();
+        RockInstances->SetVisibility(false, true);
+        if (bWasUsingFallback || DisabledLegacyProxyCount > 0)
+        {
+            UE_LOG(LogTemp, Display,
+                TEXT("[Aether Terrain] Production %s active; placeholder cleared and %d Landscape proxies suppressed."),
+                bMeshTerrainAuthoritative ? TEXT("Mesh Terrain") : TEXT("Landscape"),
+                DisabledLegacyProxyCount);
+        }
+    }
 }
 
 bool AProceduralWorldDirector::HasAuthoredWater() const
@@ -585,6 +794,10 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 7.5f;
         TargetSunColor = FLinearColor(1.0f, 0.67f, 0.43f);
         TargetSunRotation = FRotator(-12.0f, -48.0f, 0.0f);
+        TargetSeaState = 0.34f;
+        TargetOceanRoughness = 0.045f;
+        TargetWaveChoppiness = 0.22f;
+        TargetFoamAmount = 0.05f;
         break;
     case EAetherWeather::BrokenClouds:
         TargetStorminess = 0.22f;
@@ -592,6 +805,10 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 5.8f;
         TargetSunColor = FLinearColor(0.93f, 0.96f, 1.0f);
         TargetSunRotation = FRotator(-28.0f, -35.0f, 0.0f);
+        TargetSeaState = 0.68f;
+        TargetOceanRoughness = 0.075f;
+        TargetWaveChoppiness = 0.42f;
+        TargetFoamAmount = 0.18f;
         break;
     case EAetherWeather::StormFront:
         TargetStorminess = 1.0f;
@@ -599,6 +816,10 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 1.35f;
         TargetSunColor = FLinearColor(0.52f, 0.62f, 0.72f);
         TargetSunRotation = FRotator(-18.0f, 20.0f, 0.0f);
+        TargetSeaState = 1.25f;
+        TargetOceanRoughness = 0.15f;
+        TargetWaveChoppiness = 0.72f;
+        TargetFoamAmount = 0.60f;
         break;
     case EAetherWeather::BlueHour:
         TargetStorminess = 0.12f;
@@ -606,12 +827,21 @@ void AProceduralWorldDirector::ApplyWeather(const EAetherWeather NewWeather, con
         TargetSunIntensity = 1.9f;
         TargetSunColor = FLinearColor(0.42f, 0.55f, 0.9f);
         TargetSunRotation = FRotator(-3.0f, -62.0f, 0.0f);
+        TargetSeaState = 0.52f;
+        TargetOceanRoughness = 0.06f;
+        TargetWaveChoppiness = 0.34f;
+        TargetFoamAmount = 0.12f;
         break;
     }
 
     if (bInstant)
     {
         CurrentStorminess = TargetStorminess;
+        CurrentSeaState = TargetSeaState;
+        CurrentOceanRoughness = TargetOceanRoughness;
+        CurrentWaveChoppiness = TargetWaveChoppiness;
+        CurrentFoamAmount = TargetFoamAmount;
+        UpdateOceanSurface(0.0f);
         HeightFog->SetFogDensity(TargetFogDensity);
         Sun->SetIntensity(TargetSunIntensity);
         Sun->SetLightColor(TargetSunColor);

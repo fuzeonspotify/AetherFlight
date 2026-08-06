@@ -12,8 +12,13 @@
   ],
   "landscape_layers": [
     "Grass",
+    "ForestFloor",
     "Rock",
     "Scree",
-    "Snow"
-  ]
+    "Snow",
+    "Sand",
+    "Wetland"
+  ],
+  "hydrology_plan": "Hydrology/AetherFlight_Hydrology.json",
+  "import_guard": "Use 4033x4033, XY 1190.476190, Z 1093.75; do not pad or clip"
 }

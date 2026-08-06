@@ -19,6 +19,23 @@ StagedBuilds/
 # Per-developer Unreal content
 Content/Developers/
 
+# Locally downloaded full-quality CC0 audio sources. The Unreal installer imports
+# these into Sound Wave assets, while source recordings remain outside Git.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/AudioSource/Jet/
+
+# Third-party Unreal Sensei source assets are licensed for local project use,
+# not redistribution from this public repository. Install them with
+# INSTALL_SENSEI_TERRAIN_ASSETS.ps1.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/SenseiTerrain/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/SourceAssets/ThirdParty/SenseiTerrain*.zip
+
+# Locally installed Fab/environment packs. Keep these installed in Unreal, but
+# do not redistribute the source assets through this public repository.
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/DZ_Assets/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/GV_FreeShrubsPack/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/Nanite_Plants_Sample_Collection/
+AetherFlight_Cinematic_v5_WITH_BUILD_FILES/Content/Rock_Collection_04/
+
 # Visual Studio / Rider / VS Code generated state
 .vs/
 .idea/
@@ -44,3 +61,6 @@ Content/Developers/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+**/__pycache__/
+*.pyc

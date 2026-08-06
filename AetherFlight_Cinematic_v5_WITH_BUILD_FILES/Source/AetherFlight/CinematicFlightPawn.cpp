@@ -1,8 +1,11 @@
 #include "CinematicFlightPawn.h"
 
+#include "AetherWingVaporComponent.h"
+
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WorldPartitionStreamingSourceComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -11,10 +14,13 @@
 #include "ProceduralMeshComponent.h"
 #include "ProceduralWorldDirector.h"
 #include "UObject/ConstructorHelpers.h"
+#include "WorldPartition/WorldPartitionStreamingSource.h"
 
 ACinematicFlightPawn::ACinematicFlightPawn()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    WingVapor = CreateDefaultSubobject<UAetherWingVaporComponent>(TEXT("WingVapor"));
 
     PhysicsBody = CreateDefaultSubobject<UBoxComponent>(TEXT("PhysicsBody"));
     SetRootComponent(PhysicsBody);
@@ -25,6 +31,31 @@ ACinematicFlightPawn::ACinematicFlightPawn()
     PhysicsBody->SetLinearDamping(0.015f);
     PhysicsBody->SetAngularDamping(0.55f);
     PhysicsBody->SetHiddenInGame(true);
+
+    // A high-speed aircraft can outrun the default player-controller streaming
+    // source. Keep a compact sphere around the aircraft and a longer sector in
+    // front so World Partition starts loading cells before the camera reaches
+    // them without loading the entire 48 km world.
+    FlightStreamingSource = CreateDefaultSubobject<UWorldPartitionStreamingSourceComponent>(
+        TEXT("FlightStreamingSource"));
+    FlightStreamingSource->TargetState = EStreamingSourceTargetState::Activated;
+    FlightStreamingSource->Priority = EStreamingSourcePriority::High;
+
+    FStreamingSourceShape NearShape;
+    NearShape.bUseGridLoadingRange = false;
+    NearShape.bIsSector = false;
+    NearShape.Location = FVector::ZeroVector;
+    NearShape.Radius = 250000.0f;
+    FlightStreamingSource->Shapes.Add(NearShape);
+
+    FStreamingSourceShape AheadShape;
+    AheadShape.bUseGridLoadingRange = false;
+    AheadShape.bIsSector = true;
+    AheadShape.Location = FVector(200000.0f, 0.0f, 0.0f);
+    AheadShape.Rotation = FRotator::ZeroRotator;
+    AheadShape.Radius = 800000.0f;
+    AheadShape.SectorAngle = 75.0f;
+    FlightStreamingSource->Shapes.Add(AheadShape);
 
     AirframeMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ImportedAirframe"));
     AirframeMesh->SetupAttachment(PhysicsBody);
@@ -87,18 +118,66 @@ void ACinematicFlightPawn::BeginPlay()
 {
     Super::BeginPlay();
     PhysicsBody->SetMassOverrideInKg(NAME_None, AircraftMassKg, true);
+
+    // Move to the real flight start before enabling the aircraft streaming
+    // source. This avoids initially loading cells around an unrelated
+    // PlayerStart and then immediately discarding them after a teleport.
+    ResetAircraft();
+    if (FlightStreamingSource)
+    {
+        FlightStreamingSource->EnableStreamingSource();
+    }
+
+    // Hold the aircraft at 20,000 ft while the initial activation area streams.
+    // The hold ends as soon as the streaming source reports completion after a
+    // short minimum delay, or after the safety timeout so Play can never hang.
+    bWaitingForInitialStreaming = true;
+    InitialStreamingWaitElapsed = 0.0f;
+    PhysicsBody->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    PhysicsBody->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+    PhysicsBody->SetSimulatePhysics(false);
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(
+            -1,
+            InitialStreamingMaximumWaitSeconds,
+            FColor(120, 220, 255),
+            TEXT("AETHER // STREAMING FLIGHT AREA"));
+    }
+
     LoadImportedAirframe();
     if (!bHasImportedAirframe)
     {
         BuildFallbackAirframe();
     }
     ActivateCamera(CameraMode);
-    PreviousVelocity = PhysicsBody->GetPhysicsLinearVelocity();
+    PreviousVelocity = FVector::ZeroVector;
 }
 
 void ACinematicFlightPawn::Tick(const float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+
+    if (bWaitingForInitialStreaming)
+    {
+        InitialStreamingWaitElapsed += DeltaSeconds;
+        UpdateCamera(DeltaSeconds);
+
+        const bool bMinimumWaitComplete =
+            InitialStreamingWaitElapsed >= InitialStreamingMinimumWaitSeconds;
+        const bool bStreamingComplete =
+            !FlightStreamingSource || FlightStreamingSource->IsStreamingCompleted();
+        const bool bTimedOut =
+            InitialStreamingWaitElapsed >= InitialStreamingMaximumWaitSeconds;
+
+        if (bMinimumWaitComplete && (bStreamingComplete || bTimedOut))
+        {
+            ReleaseAircraftAfterStreaming();
+        }
+        return;
+    }
+
     ApplyAerodynamics(FMath::Clamp(DeltaSeconds, 0.001f, 0.05f));
     UpdateCamera(DeltaSeconds);
 
@@ -110,6 +189,21 @@ void ACinematicFlightPawn::Tick(const float DeltaSeconds)
         SmoothedGForce = FMath::FInterpTo(SmoothedGForce, NormalG, DeltaSeconds, 3.5f);
     }
     PreviousVelocity = Velocity;
+}
+
+void ACinematicFlightPawn::ReleaseAircraftAfterStreaming()
+{
+    bWaitingForInitialStreaming = false;
+    PhysicsBody->SetSimulatePhysics(true);
+    PhysicsBody->SetPhysicsLinearVelocity(GetActorForwardVector() * 15500.0f);
+    PhysicsBody->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+    PreviousVelocity = PhysicsBody->GetPhysicsLinearVelocity();
+
+    UE_LOG(
+        LogTemp,
+        Display,
+        TEXT("[Aether Streaming] Initial flight area released after %.2f seconds."),
+        InitialStreamingWaitElapsed);
 }
 
 void ACinematicFlightPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -131,10 +225,17 @@ void ACinematicFlightPawn::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 void ACinematicFlightPawn::ResetAircraft()
 {
-    FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(-650000.0f, -900000.0f, 85000.0f));
+    const float SpawnAltitudeCm = FMath::Max(1000.0f, SpawnAltitudeFeet) * 30.48f;
+    FTransform SpawnTransform(
+        FRotator(-2.0f, 0.0f, 0.0f),
+        FVector(-860000.0f, -900000.0f, SpawnAltitudeCm));
+
     if (AProceduralWorldDirector* Director = AProceduralWorldDirector::Find(GetWorld()))
     {
         SpawnTransform = Director->GetFlightSpawnTransform();
+        FVector SpawnLocation = SpawnTransform.GetLocation();
+        SpawnLocation.Z = SpawnAltitudeCm;
+        SpawnTransform.SetLocation(SpawnLocation);
     }
 
     PhysicsBody->SetPhysicsLinearVelocity(FVector::ZeroVector);
@@ -157,6 +258,13 @@ float ACinematicFlightPawn::GetAltitudeFeet() const
 float ACinematicFlightPawn::GetMach() const
 {
     return (PhysicsBody->GetPhysicsLinearVelocity().Size() * 0.01f) / 343.0f;
+}
+
+float ACinematicFlightPawn::GetAngleOfAttackDegrees() const
+{
+    const FVector LocalVelocity = GetActorTransform().InverseTransformVectorNoScale(
+        PhysicsBody->GetPhysicsLinearVelocity());
+    return FMath::RadiansToDegrees(FMath::Atan2(-LocalVelocity.Z, FMath::Max(1.0f, LocalVelocity.X)));
 }
 
 FString ACinematicFlightPawn::GetCameraModeName() const
@@ -268,9 +376,23 @@ void ACinematicFlightPawn::InputThrottle(const float Value)
     Throttle = FMath::Clamp(Throttle + Value * GetWorld()->GetDeltaSeconds() * 0.36f, 0.0f, 1.0f);
 }
 
-void ACinematicFlightPawn::InputPitch(const float Value) { PitchInput = FMath::Clamp(Value, -1.0f, 1.0f); }
-void ACinematicFlightPawn::InputRoll(const float Value) { RollInput = FMath::Clamp(Value, -1.0f, 1.0f); }
-void ACinematicFlightPawn::InputYaw(const float Value) { YawInput = FMath::Clamp(Value, -1.0f, 1.0f); }
+void ACinematicFlightPawn::InputPitch(const float Value)
+{
+    const float Direction = bInvertPitchControl ? -1.0f : 1.0f;
+    PitchInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
+
+void ACinematicFlightPawn::InputRoll(const float Value)
+{
+    const float Direction = bInvertRollControl ? -1.0f : 1.0f;
+    RollInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
+
+void ACinematicFlightPawn::InputYaw(const float Value)
+{
+    const float Direction = bInvertYawControl ? -1.0f : 1.0f;
+    YawInput = FMath::Clamp(Value * Direction, -1.0f, 1.0f);
+}
 
 void ACinematicFlightPawn::InputMouseX(const float Value)
 {
@@ -281,7 +403,8 @@ void ACinematicFlightPawn::InputMouseX(const float Value)
     }
     else
     {
-        MouseFlightX = FMath::Clamp(Value * 0.09f, -0.75f, 0.75f);
+        const float Direction = bInvertRollControl ? -1.0f : 1.0f;
+        MouseFlightX = FMath::Clamp(Value * 0.09f * Direction, -0.75f, 0.75f);
     }
 }
 
@@ -294,7 +417,8 @@ void ACinematicFlightPawn::InputMouseY(const float Value)
     }
     else
     {
-        MouseFlightY = FMath::Clamp(-Value * 0.08f, -0.7f, 0.7f);
+        const float Direction = bInvertPitchControl ? -1.0f : 1.0f;
+        MouseFlightY = FMath::Clamp(-Value * 0.08f * Direction, -0.7f, 0.7f);
     }
 }
 

@@ -12,8 +12,16 @@ public class AetherFlight : ModuleRules
             "CoreUObject",
             "Engine",
             "InputCore",
+            "AudioMixer",
             "Landscape",
-            "ProceduralMeshComponent"
+            "ProceduralMeshComponent",
+            "AssetRegistry"
+        });
+
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+            "MeshPartition",
+            "PhysicsCore"
         });
     }
 }
