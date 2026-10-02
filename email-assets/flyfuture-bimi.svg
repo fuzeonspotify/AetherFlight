@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.2" baseProfile="tiny-ps" xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>FlyFuture</title>
+  <desc>FlyFuture white aircraft mark on a dark green square background.</desc>
+  <rect width="512" height="512" fill="#0b1010"/>
+  <g transform="translate(66 104) scale(9.5)">
+    <path d="m20 1 5.5 13 13 13-16-6L20 31l-2.5-10-16 6 13-13L20 1Z M19.4 6H20.6V21H19.4Z" fill="#ffffff" fill-rule="evenodd"/>
+  </g>
+</svg>
